@@ -277,6 +277,27 @@ namespace NonIntrusive
         public String readString(uint address, int maxLength, Encoding encode)
         {
             byte[] data = getData(address, maxLength);
+
+            if (encode.IsSingleByte)
+            {
+                for (int x = 0; x < data.Length - 1; x++)
+                {
+                    if (data[x] == 0)
+                    {
+                        return encode.GetString(data, 0, x + 1);
+                    }
+                }
+            }
+            else
+            {
+                for (int x = 0; x < data.Length - 2; x++)
+                {
+                    if (data[x] + data[x+1] == 0)
+                    {
+                        return encode.GetString(data, 0, x + 1);
+                    }
+                }
+            }
             return encode.GetString(data);
         }
 

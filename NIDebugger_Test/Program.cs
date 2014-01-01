@@ -20,7 +20,7 @@ namespace NIDebugger_Test
             opts.resumeOnCreate = false;
             Process p = debug.Execute(opts);
 
-            NIBreakPoint bp = debug.setBreakpoint(0xca2538);
+            NIBreakPoint bp = debug.setBreakpoint(0x10C62A8);
 
             debug.Continue();
 
@@ -32,14 +32,22 @@ namespace NIDebugger_Test
             uint eaxVal = ctx.Eax;
 
             String curVal = debug.readString(ctx.Eax, 100, Encoding.Unicode);
-
+            Console.WriteLine("Old value: " + curVal);
             debug.writeString((uint)memoryCave, "Welcome to NIDebugger", Encoding.Unicode);
+
+            IntPtr newMemCave = debug.allocateMemory(200);
+            debug.writeString((uint)newMemCave, "Test123", Encoding.ASCII);
+
+            String asciiString = debug.readString((uint)newMemCave, 100, Encoding.ASCII);
+
+            Console.WriteLine(asciiString);
 
             ctx.Eax = (uint)memoryCave;
 
             debug.updateContext(ctx);
 
             debug.Detach();
+            Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
         }
 
