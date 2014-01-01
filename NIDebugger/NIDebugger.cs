@@ -43,7 +43,7 @@ namespace NonIntrusive
         private static ManualResetEvent mre = new ManualResetEvent(false);
         BackgroundWorker bwContinue = new BackgroundWorker();
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
-
+        public Win32.CONTEXT ctx = new Win32.CONTEXT();
         NIBreakPoint lastBreakpoint; 
 
         Process debuggedProcess;
@@ -64,12 +64,12 @@ namespace NonIntrusive
         }
 
 
-        public void updateContext(Win32.CONTEXT ctx)
+        public void updateContext()
         {
-            updateContext(debuggedProcessInfo.dwThreadId,ctx);
+            updateContext(debuggedProcessInfo.dwThreadId);
         }
 
-        public void updateContext(int threadId,Win32.CONTEXT ctx)
+        public void updateContext(int threadId)
         {
             IntPtr hThread = getThreadHandle(threadId);
 
@@ -153,6 +153,7 @@ namespace NonIntrusive
                             Console.WriteLine("We hit a breakpoint: " + address.ToString("X"));
                             lastBreakpoint = breakpoints[address];
                             lastBreakpoint.threadId = (uint)pThread.Id;
+                            this.ctx = getContext(pThread.Id);
                             e.Cancel = true;
                             mre.Set();
                             return;
@@ -189,6 +190,15 @@ namespace NonIntrusive
 
         public void Continue()
         {
+            if (lastBreakpoint != null)
+            {
+                updateContext( (int)lastBreakpoint.threadId);
+            }
+            else
+            {
+                updateContext();
+            }
+            
             mre.Reset();
             bwContinue.RunWorkerAsync();
             mre.WaitOne();

@@ -26,26 +26,16 @@ namespace NIDebugger_Test
 
             debug.clearBreakpoint(bp);
 
-            Win32.CONTEXT ctx = debug.getContext();
-
             IntPtr memoryCave = debug.allocateMemory(100);
-            uint eaxVal = ctx.Eax;
+            uint eaxVal = debug.ctx.Eax;
 
-            String curVal = debug.readString(ctx.Eax, 100, Encoding.Unicode);
+            String curVal = debug.readString(debug.ctx.Eax, 100, Encoding.Unicode);
             Console.WriteLine("Old value: " + curVal);
             debug.writeString((uint)memoryCave, "Welcome to NIDebugger", Encoding.Unicode);
 
-            IntPtr newMemCave = debug.allocateMemory(200);
-            debug.writeString((uint)newMemCave, "Test123", Encoding.ASCII);
+            debug.ctx.Eax = (uint)memoryCave;
 
-            String asciiString = debug.readString((uint)newMemCave, 100, Encoding.ASCII);
-
-            Console.WriteLine(asciiString);
-
-            ctx.Eax = (uint)memoryCave;
-
-            debug.updateContext(ctx);
-
+            debug.updateContext();
             debug.Detach();
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
