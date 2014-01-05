@@ -19,8 +19,8 @@ namespace NIDebugger_Test
             opts.commandLine = "\"c:\\asbps9t.sds\"";
             opts.resumeOnCreate = false;
             Process p = debug.Execute(opts);
-
-            NIBreakPoint bp = debug.setBreakpoint(0x10C62A8);
+            
+            NIBreakPoint bp = debug.setBreakpoint(0xdc62A8);
 
             debug.Continue();
 
@@ -36,6 +36,9 @@ namespace NIDebugger_Test
             debug.ctx.Eax = (uint)memoryCave;
 
             debug.updateContext();
+
+            uint addr = debug.getProcAddress("kernel32.dll","Module32First");    
+            addr = debug.getProcAddress("comdlg32.dll", "ChooseColorA");    
             debug.Detach();
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();

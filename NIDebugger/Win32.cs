@@ -10,6 +10,15 @@ namespace NonIntrusive
     public class Win32
     {
         #region DLL Imports
+        [DllImport("kernel32.dll")]
+        public static extern int CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll")]
+        public static extern bool Module32First(IntPtr hSnapshot, ref MODULEENTRY32 lpme);
+        [DllImport("kernel32.dll")]
+        public static extern bool Module32Next(IntPtr hSnapshot, ref MODULEENTRY32 lpme);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr CreateToolhelp32Snapshot(SnapshotFlags dwFlags, uint th32ProcessID);
+
         [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
         public static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
         [DllImport("kernel32.dll")]
@@ -46,7 +55,35 @@ namespace NonIntrusive
         public static extern IntPtr OpenThread(int dwDesiredAccess, bool bInheritHandle, uint dwThreadId);
         #endregion
         #region Structs/Enums
-
+        public struct MODULEENTRY32
+        {
+            const int MAX_PATH = 260;
+            public UInt32 dwSize;
+            public UInt32 th32ModuleID;
+            public UInt32 th32ProcessID;
+            public IntPtr GlblcntUsage;
+            public UInt32 ProccntUsage;
+            public IntPtr modBaseAddr;
+            public UInt32 modBaseSize;
+            public IntPtr hModule;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = MAX_PATH)]
+            public string szModule;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = MAX_PATH)]
+            public string szExePath;
+            public UInt32 dwFlags;
+        }
+        [Flags]
+        public enum SnapshotFlags : uint
+        {
+            HeapList = 0x00000001,
+            Process = 0x00000002,
+            Thread = 0x00000004,
+            Module = 0x00000008,
+            Module32 = 0x00000010,
+            Inherit = 0x80000000,
+            All = 0x0000001F,
+            NoHeaps = 0x40000000
+        }
         public enum AllocationProtectEnum : uint
         {
             PAGE_EXECUTE = 0x00000010,

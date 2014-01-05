@@ -323,7 +323,107 @@ namespace NonIntrusive
             return memLocation;
         }
 
+        private Win32.MODULEENTRY32 getModule(String modName)
+        {
+            IntPtr hSnap = Win32.CreateToolhelp32Snapshot(Win32.SnapshotFlags.NoHeaps | Win32.SnapshotFlags.Module, (uint) debuggedProcessInfo.dwProcessId);
+            Win32.MODULEENTRY32 module = new Win32.MODULEENTRY32();
+            module.dwSize = (uint)Marshal.SizeOf(module);
+            Win32.Module32First(hSnap, ref module);
+
+            if (module.szModule.Equals(modName,StringComparison.CurrentCultureIgnoreCase))
+            {
+                return module;
+            }
+
+            while (Win32.Module32Next(hSnap,ref module))
+            {
+                if (module.szModule.Equals(modName, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return module;
+                }
+            }
+            module = new Win32.MODULEENTRY32();
+            Win32.CloseHandle(hSnap);
+            return module;
+        }
+
+        public uint getProcAddress (String modName, String method)
+        {
+            Win32.MODULEENTRY32 module = getModule(modName);
+
+            if (module.dwSize == 0)
+            {
+                Console.WriteLine("Failed to find module");
+                throw new Exception("Target doesn't have module: " + modName + " loaded.");
+            }
+            uint modBase = (uint)module.modBaseAddr;
+
+            uint peAddress = getDword(modBase + 0x3c);
+
+            uint exportTableAddress = getDword(modBase + peAddress + 0x78);
+            uint exportTableSize = getDword(modBase + peAddress + 0x7C);
+
+            byte[] exportTable = getData(modBase + exportTableAddress, (int)exportTableSize);
+            uint exportEnd = modBase + exportTableAddress + exportTableSize;
+
+
+            uint numberOfFunctions = BitConverter.ToUInt32(exportTable, 0x14);
+            uint numberOfNames = BitConverter.ToUInt32(exportTable, 0x18);
+
+            uint functionAddressBase = BitConverter.ToUInt32(exportTable, 0x1c);
+            uint nameAddressBase = BitConverter.ToUInt32(exportTable, 0x20);
+            uint ordinalAddressBase = BitConverter.ToUInt32(exportTable, 0x24);
+
+            List<ExportedFunction> functions = new List<ExportedFunction>();
+            StringBuilder sb = new StringBuilder();
+            for (int x = 0; x < numberOfNames; x++)
+            {
+                sb.Clear();
+                uint namePtr = BitConverter.ToUInt32(exportTable, (int)(nameAddressBase - exportTableAddress) + (x * 4)) - exportTableAddress;
+                
+                while (exportTable[namePtr] != 0)
+                {
+                    sb.Append((char)exportTable[namePtr]);
+                    namePtr++;
+                }
+
+                ushort funcOrdinal = BitConverter.ToUInt16(exportTable, (int)(ordinalAddressBase - exportTableAddress) + (x * 2));
+
+
+                uint funcAddress = BitConverter.ToUInt32(exportTable, (int)(functionAddressBase - exportTableAddress) + (funcOrdinal * 4));
+                funcAddress += modBase;
+
+                if (sb.ToString().Equals(method))
+                {
+                   return funcAddress;
+                }
+              //  functions.Add(new ExportedFunction(){name = sb.ToString(), address = funcAddress});
+
+            }
+            return 0;
+
+
+        }
+
+        public uint getDword(uint address)
+        {
+            byte[] data = getData(address, 4);
+            return BitConverter.ToUInt32(data, 0);
+        }
+
+        private class ExportedFunction
+        {
+            public String name;
+            public uint address;
+
+            public String ToString()
+            {
+                return name;
+            }
+        }
     }
+
+    
 
     public class NIStartupOptions
     {
