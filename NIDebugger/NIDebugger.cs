@@ -163,7 +163,6 @@ namespace NonIntrusive
                 resumeAllThreads();
                 //Console.WriteLine("threads resumed");
             }
-            return;
         }
 
         private void pauseAllThreads()
@@ -409,6 +408,22 @@ namespace NonIntrusive
         {
             byte[] data = getData(address, 4);
             return BitConverter.ToUInt32(data, 0);
+        }
+
+        public void writeDword(uint address, uint value)
+        {
+            byte[] data = BitConverter.GetBytes(value);
+            setData(address, data);
+        }
+
+        public uint getStackValue(uint espOffset)
+        {
+            return getDword(ctx.Esp + espOffset);
+        }
+
+        public void setStackValue(uint espOffset, uint value)
+        {
+            writeDword(ctx.Esp + espOffset, value);
         }
 
         private class ExportedFunction
