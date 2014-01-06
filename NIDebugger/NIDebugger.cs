@@ -409,7 +409,7 @@ namespace NonIntrusive
         {
             uint address = ctx.Eip;
             byte[] data = getData(address, 16);
-            if (breakpoints[address] != null)
+            if (breakpoints.ContainsKey(address) == true)
             {
                 Array.Copy(breakpoints[address].originalBytes, data, 2);
             }
@@ -421,8 +421,8 @@ namespace NonIntrusive
         {
             uint address = ctx.Eip;
             byte[] data = getData(address, 16);
-            
-            if (breakpoints[address] != null)
+
+            if (breakpoints.ContainsKey(address) == true)
             {
                 Array.Copy(breakpoints[address].originalBytes, data, 2);
             }
@@ -430,6 +430,26 @@ namespace NonIntrusive
             uint size = lde.ldasm(data, 0, false).size;
 
             return BitConverter.ToString(data, 0, (int)size).Replace("-", " ");
+        }
+
+        public void SingleStep()
+        {
+            updateContext();
+            uint address = ctx.Eip;
+            byte[] data = getData(address, 16);
+
+            if (breakpoints.ContainsKey(address) == true)
+            {
+                Array.Copy(breakpoints[address].originalBytes, data, 2);
+                clearBreakpoint(breakpoints[address]);
+            }
+            uint size = lde.ldasm(data, 0, false).size;
+            updateContext();
+            NIBreakPoint stepBP = setBreakpoint(ctx.Eip + size);
+            Continue();
+
+            clearBreakpoint(stepBP);
+            
         }
 
         public uint getDword(uint address)

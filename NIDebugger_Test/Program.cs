@@ -26,6 +26,15 @@ namespace NIDebugger_Test
             debug.Continue();
             Console.WriteLine("Instruction length: " + debug.getInstrLength());
             Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
+
+            for (var x = 0; x < 15; x++)
+            {
+                debug.SingleStep();
+                Console.WriteLine("Instruction length: " + debug.getInstrLength());
+                Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
+            }
+
+
             debug.clearBreakpoint(bp);
 
             IntPtr memoryCave = debug.allocateMemory(100);
