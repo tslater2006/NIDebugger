@@ -1,4 +1,5 @@
-﻿using System;
+﻿using LDASM_Sharp;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -47,6 +48,7 @@ namespace NonIntrusive
         NIBreakPoint lastBreakpoint; 
 
         Process debuggedProcess;
+        LDASM lde = new LDASM();
 
         private byte[] BREAKPOINT = new byte[] { 0xEB, 0xFE };
         
@@ -373,7 +375,6 @@ namespace NonIntrusive
             uint nameAddressBase = BitConverter.ToUInt32(exportTable, 0x20);
             uint ordinalAddressBase = BitConverter.ToUInt32(exportTable, 0x24);
 
-            List<ExportedFunction> functions = new List<ExportedFunction>();
             StringBuilder sb = new StringBuilder();
             for (int x = 0; x < numberOfNames; x++)
             {
@@ -404,6 +405,33 @@ namespace NonIntrusive
 
         }
 
+        public uint getInstrLength()
+        {
+            uint address = ctx.Eip;
+            byte[] data = getData(address, 16);
+            if (breakpoints[address] != null)
+            {
+                Array.Copy(breakpoints[address].originalBytes, data, 2);
+            }
+
+            return lde.ldasm(data, 0, false).size;
+        }
+
+        public String getInstrOpcodes()
+        {
+            uint address = ctx.Eip;
+            byte[] data = getData(address, 16);
+            
+            if (breakpoints[address] != null)
+            {
+                Array.Copy(breakpoints[address].originalBytes, data, 2);
+            }
+
+            uint size = lde.ldasm(data, 0, false).size;
+
+            return BitConverter.ToString(data, 0, (int)size).Replace("-", " ");
+        }
+
         public uint getDword(uint address)
         {
             byte[] data = getData(address, 4);
@@ -426,16 +454,6 @@ namespace NonIntrusive
             writeDword(ctx.Esp + espOffset, value);
         }
 
-        private class ExportedFunction
-        {
-            public String name;
-            public uint address;
-
-            public String ToString()
-            {
-                return name;
-            }
-        }
     }
 
     
