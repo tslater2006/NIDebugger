@@ -41,13 +41,21 @@ namespace NonIntrusive
         public bool AutoClearBP = false;
         public bool StepIntoCalls = true;
 
+        public Win32.CONTEXT Context
+        {
+            get
+            {
+                return contexts[getCurrentThreadId()];
+            }
+        }
+
         Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
-
+        Dictionary<int, Win32.CONTEXT> contexts = new Dictionary<int,Win32.CONTEXT>();
         private static ManualResetEvent mre = new ManualResetEvent(false);
         BackgroundWorker bwContinue = new BackgroundWorker();
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
-        public Win32.CONTEXT ctx = new Win32.CONTEXT();
+
         NIBreakPoint lastBreakpoint; 
 
         Process debuggedProcess;
@@ -63,21 +71,41 @@ namespace NonIntrusive
         }
 
 
+        private void getContexts()
+        {
+            foreach (ProcessThread currThread in debuggedProcess.Threads)
+            {
+                Win32.CONTEXT ctx = getContext(currThread.Id);
+                if (contexts.ContainsKey(currThread.Id))
+                {
+                    contexts[currThread.Id] = ctx;
+                }
+                else
+                {
+                    contexts.Add(currThread.Id, ctx);
+                }
+            }
+        }
+
         public Win32.CONTEXT getContext()
         {
-            return getContext(debuggedProcessInfo.dwThreadId);
+            return contexts[debuggedProcessInfo.dwThreadId];
         }
 
 
-        public void updateContext()
+        public void updateContexts()
         {
-            updateContext(debuggedProcessInfo.dwThreadId);
+            var keys = contexts.Keys.ToList<int>();
+            for (var x = 0; x < keys.Count; x++ )
+            {
+                updateContext(keys[x]);
+            }
         }
 
         public void updateContext(int threadId)
         {
             IntPtr hThread = getThreadHandle(threadId);
-
+            Win32.CONTEXT ctx = contexts[threadId];
             Win32.SetThreadContext(hThread,ref ctx);
         }
 
@@ -124,6 +152,7 @@ namespace NonIntrusive
             }
             else
             {
+                getContexts();
                 Win32.CONTEXT ctx = getContext();
                 uint OEP = ctx.Eax;
                 NIBreakPoint bp = setBreakpoint(OEP);
@@ -158,7 +187,9 @@ namespace NonIntrusive
                             Console.WriteLine("We hit a breakpoint: " + address.ToString("X"));
                             lastBreakpoint = breakpoints[address];
                             lastBreakpoint.threadId = (uint)pThread.Id;
-                            this.ctx = getContext(pThread.Id);
+
+                            getContexts();
+
                             e.Cancel = true;
                             mre.Set();
                             return;
@@ -194,14 +225,7 @@ namespace NonIntrusive
 
         public void Continue()
         {
-            if (lastBreakpoint != null)
-            {
-                updateContext( (int)lastBreakpoint.threadId);
-            }
-            else
-            {
-                updateContext();
-            }
+            updateContexts();
             
             mre.Reset();
             bwContinue.RunWorkerAsync();
@@ -221,6 +245,7 @@ namespace NonIntrusive
             {
                 clearBreakpoint(addr);
             }
+            updateContexts();
             resumeAllThreads();
         }
 
@@ -413,9 +438,26 @@ namespace NonIntrusive
 
         }
 
+        private int getCurrentThreadId()
+        {
+            int thread;
+            // determine the thread
+            if (lastBreakpoint != null)
+            {
+                thread = (int)lastBreakpoint.threadId;
+            }
+            else
+            {
+                thread = debuggedProcessInfo.dwThreadId;
+            }
+            return thread;
+        }
+
         public uint getInstrLength()
         {
-            uint address = ctx.Eip;
+            
+            uint address = contexts[getCurrentThreadId()].Eip;
+
             byte[] data = getData(address, 16);
             if (breakpoints.ContainsKey(address) == true)
             {
@@ -427,7 +469,7 @@ namespace NonIntrusive
 
         public String getInstrOpcodes()
         {
-            uint address = ctx.Eip;
+            uint address = contexts[getCurrentThreadId()].Eip;
             byte[] data = getData(address, 16);
 
             if (breakpoints.ContainsKey(address) == true)
@@ -450,8 +492,8 @@ namespace NonIntrusive
 
         public void SingleStep()
         {
-            updateContext();
-            uint address = ctx.Eip;
+            updateContexts();
+            uint address = Context.Eip;
             byte[] data = getData(address, 16);
 
             if (breakpoints.ContainsKey(address) == true)
@@ -463,20 +505,20 @@ namespace NonIntrusive
             ldasm_data ldata = lde.ldasm(data, 0, false);
 
             uint size = ldata.size;
-            uint nextAddress = ctx.Eip + size;
+            uint nextAddress = Context.Eip + size;
 
             if (ldata.opcd_size == 1 && (data[ldata.opcd_offset] == 0xEB))
             {
                 // we have a 1 byte JMP here
                 sbyte offset = (sbyte)data[ldata.imm_offset];
-                nextAddress = (uint)(ctx.Eip + offset) + ldata.size;
+                nextAddress = (uint)(Context.Eip + offset) + ldata.size;
             }
 
             if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] == 0xE9) || (data[ldata.opcd_offset] == 0xE8)))
             {
                 // we have a long JMP or CALL here
                 int offset = BitConverter.ToInt32(data,ldata.imm_offset);
-                nextAddress = (uint)(ctx.Eip + offset) + ldata.size;
+                nextAddress = (uint)(Context.Eip + offset) + ldata.size;
             }
 
 
@@ -489,7 +531,7 @@ namespace NonIntrusive
                 if (willJump)
                 {
                     sbyte offset = (sbyte)data[ldata.imm_offset];
-                    nextAddress = (uint)(ctx.Eip + offset) + ldata.size;
+                    nextAddress = (uint)(Context.Eip + offset) + ldata.size;
                 }
             }
 
@@ -502,12 +544,12 @@ namespace NonIntrusive
                 if (willJump)
                 {
                     int offset = BitConverter.ToInt32(data, ldata.imm_offset);
-                    nextAddress = (uint)((ctx.Eip + offset) + ldata.size);
+                    nextAddress = (uint)((Context.Eip + offset) + ldata.size);
                 }
             }
 
 
-            updateContext();
+            updateContexts();
             NIBreakPoint stepBP = setBreakpoint(nextAddress);
             Continue();
 
@@ -525,55 +567,55 @@ namespace NonIntrusive
             switch(b)
             {
                 case 0:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = Context.GetFlag(Extensions.NIFlags.OVERFLOW);
                     break;
                 case 1:
-                    willJump = !ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = !Context.GetFlag(Extensions.NIFlags.OVERFLOW);
                     break;
                 case 2:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.CARRY);
+                    willJump = Context.GetFlag(Extensions.NIFlags.CARRY);
                     break;
                 case 3:
-                    willJump = !ctx.GetFlag(Extensions.NIFlags.CARRY);
+                    willJump = !Context.GetFlag(Extensions.NIFlags.CARRY);
                     break;
                 case 4:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.ZERO);
+                    willJump = Context.GetFlag(Extensions.NIFlags.ZERO);
                     break;
                 case 5:
-                    willJump = !ctx.GetFlag(Extensions.NIFlags.ZERO);
+                    willJump = !Context.GetFlag(Extensions.NIFlags.ZERO);
                     break;
                 case 6:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.CARRY) || ctx.GetFlag(Extensions.NIFlags.ZERO);
+                    willJump = Context.GetFlag(Extensions.NIFlags.CARRY) || Context.GetFlag(Extensions.NIFlags.ZERO);
                     break;
                 case 7:
-                    willJump = (!ctx.GetFlag(Extensions.NIFlags.CARRY)) && (!ctx.GetFlag(Extensions.NIFlags.ZERO));
+                    willJump = (!Context.GetFlag(Extensions.NIFlags.CARRY)) && (!Context.GetFlag(Extensions.NIFlags.ZERO));
                     break;
                 case 8:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.SIGN);
+                    willJump = Context.GetFlag(Extensions.NIFlags.SIGN);
                     break;
                 case 9:
-                    willJump = !ctx.GetFlag(Extensions.NIFlags.SIGN);
+                    willJump = !Context.GetFlag(Extensions.NIFlags.SIGN);
                     break;
                 case 0x0a:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.PARITY);
+                    willJump = Context.GetFlag(Extensions.NIFlags.PARITY);
                     break;
                 case 0x0b:
-                    willJump = !ctx.GetFlag(Extensions.NIFlags.PARITY);
+                    willJump = !Context.GetFlag(Extensions.NIFlags.PARITY);
                     break;
                 case 0x0c:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.SIGN) != ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = Context.GetFlag(Extensions.NIFlags.SIGN) != Context.GetFlag(Extensions.NIFlags.OVERFLOW);
                     break;
                 case 0x0d:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.SIGN) == ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = Context.GetFlag(Extensions.NIFlags.SIGN) == Context.GetFlag(Extensions.NIFlags.OVERFLOW);
                     break;
                 case 0x0e:
-                    willJump = ctx.GetFlag(Extensions.NIFlags.ZERO) || (ctx.GetFlag(Extensions.NIFlags.SIGN) != ctx.GetFlag(Extensions.NIFlags.OVERFLOW));
+                    willJump = Context.GetFlag(Extensions.NIFlags.ZERO) || (Context.GetFlag(Extensions.NIFlags.SIGN) != Context.GetFlag(Extensions.NIFlags.OVERFLOW));
                     break;
                 case 0x0f:
-                    willJump = !ctx.GetFlag(Extensions.NIFlags.ZERO) && (ctx.GetFlag(Extensions.NIFlags.SIGN) == ctx.GetFlag(Extensions.NIFlags.OVERFLOW));
+                    willJump = !Context.GetFlag(Extensions.NIFlags.ZERO) && (Context.GetFlag(Extensions.NIFlags.SIGN) == Context.GetFlag(Extensions.NIFlags.OVERFLOW));
                     break;
                 case 0xE3:
-                    willJump = ctx.Ecx == 0;
+                    willJump = Context.Ecx == 0;
                     break;
             }
             return willJump;
@@ -593,12 +635,12 @@ namespace NonIntrusive
 
         public uint getStackValue(uint espOffset)
         {
-            return getDword(ctx.Esp + espOffset);
+            return getDword(Context.Esp + espOffset);
         }
 
         public void setStackValue(uint espOffset, uint value)
         {
-            writeDword(ctx.Esp + espOffset, value);
+            writeDword(Context.Esp + espOffset, value);
         }
 
     }

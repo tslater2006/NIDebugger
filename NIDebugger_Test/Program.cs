@@ -12,7 +12,7 @@ namespace NIDebugger_Test
     {
         static void Main(string[] args)
         {
-            TestSingleStep();
+            ChangeTitle();
 
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
@@ -64,13 +64,12 @@ namespace NIDebugger_Test
             uint memoryCave = debug.allocateMemory(100);
             uint eaxVal = debug.getStackValue(8);
 
-            String curVal = debug.readString(debug.ctx.Eax, 100, Encoding.Unicode);
+            String curVal = debug.readString(debug.Context.Eax, 100, Encoding.Unicode);
             Console.WriteLine("Old value: " + curVal);
             debug.writeString(memoryCave, "Welcome to NIDebugger", Encoding.Unicode);
 
             debug.setStackValue(8, memoryCave);
 
-            debug.updateContext();
 
             debug.Detach();
         }
