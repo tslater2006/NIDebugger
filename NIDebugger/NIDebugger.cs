@@ -325,11 +325,11 @@ namespace NonIntrusive
             new NIStartupOptions() { executable = "", commandLine = "", resumeOnCreate = true };
         }
 
-        public IntPtr allocateMemory(uint size)
+        public uint allocateMemory(uint size)
         {
             IntPtr memLocation = Win32.VirtualAllocEx((IntPtr)debuggedProcessInfo.hProcess, new IntPtr(), size, (uint)Win32.StateEnum.MEM_RESERVE | (uint)Win32.StateEnum.MEM_COMMIT, (uint) Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE);
 
-            return memLocation;
+            return (uint)memLocation;
         }
 
         private Win32.MODULEENTRY32 getModule(String modName)
@@ -457,6 +457,21 @@ namespace NonIntrusive
             uint size = ldata.size;
             uint nextAddress = ctx.Eip + size;
 
+            if (ldata.opcd_size == 1 && (data[ldata.opcd_offset] == 0xEB))
+            {
+                // we have a 1 byte JMP here
+                sbyte offset = (sbyte)data[ldata.imm_offset];
+                nextAddress = (uint)(ctx.Eip + offset) + ldata.size;
+            }
+
+            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] == 0xE9) || (data[ldata.opcd_offset] == 0xE8)))
+            {
+                // we have a long JMP or CALL here
+                int offset = BitConverter.ToInt32(data,ldata.imm_offset);
+                nextAddress = (uint)(ctx.Eip + offset) + ldata.size;
+            }
+
+
 
             if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] & 0x70) == 0x70 || (data[ldata.opcd_offset] & 0xE3) == 0xE3))
             {
@@ -478,15 +493,9 @@ namespace NonIntrusive
 
                 if (willJump)
                 {
-                    byte[] immData = new byte[ldata.imm_size];
-                    Array.Copy(data, ldata.imm_offset, immData, 0, ldata.imm_size);
-
-                    int offset = BitConverter.ToInt32(immData, 0);
-
+                    int offset = BitConverter.ToInt32(data, ldata.imm_offset);
                     nextAddress = (uint)((ctx.Eip + offset) + ldata.size);
                 }
-                
-
             }
 
 
