@@ -53,7 +53,7 @@ namespace NonIntrusive
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
         Dictionary<int, Win32.CONTEXT> contexts = new Dictionary<int,Win32.CONTEXT>();
         private static ManualResetEvent mre = new ManualResetEvent(false);
-        BackgroundWorker bwContinue = new BackgroundWorker();
+        BackgroundWorker bwContinue;
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
 
         NIBreakPoint lastBreakpoint; 
@@ -67,7 +67,6 @@ namespace NonIntrusive
 
         public NIDebugger()
         {
-            bwContinue.DoWork += bw_Continue;
         }
 
 
@@ -226,7 +225,10 @@ namespace NonIntrusive
         public void Continue()
         {
             updateContexts();
-            
+
+            bwContinue = new BackgroundWorker();
+            bwContinue.DoWork += bw_Continue;
+
             mre.Reset();
             bwContinue.RunWorkerAsync();
             mre.WaitOne();
