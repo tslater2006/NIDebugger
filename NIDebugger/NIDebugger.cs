@@ -440,10 +440,6 @@ namespace NonIntrusive
             return BitConverter.ToString(data, 0, (int)size).Replace("-", " ");
         }
 
-        public void HelloExidous()
-        {
-
-        }
 
         public void SingleStep()
         {
