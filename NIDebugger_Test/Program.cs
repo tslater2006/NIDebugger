@@ -17,14 +17,16 @@ namespace NIDebugger_Test
             NIStartupOptions opts = new NonIntrusive.NIStartupOptions();
             opts.executable = @"c:\windows\system32\notepad.exe";
             opts.resumeOnCreate = false;
+            debug.AutoClearBP = true;
+            
             Process p = debug.Execute(opts);
 
             uint bpAddress = debug.getProcAddress("user32.dll", "SetWindowTextW");
-
+            
             NIBreakPoint bp = debug.setBreakpoint(bpAddress);
 
             debug.Continue();
-            Console.WriteLine("Instruction length: " + debug.getInstrLength());
+            /*Console.WriteLine("Instruction length: " + debug.getInstrLength());
             Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
 
             for (var x = 0; x < 15; x++)
@@ -32,10 +34,10 @@ namespace NIDebugger_Test
                 debug.SingleStep();
                 Console.WriteLine("Instruction length: " + debug.getInstrLength());
                 Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
-            }
+            }*/
 
 
-            debug.clearBreakpoint(bp);
+            
 
             IntPtr memoryCave = debug.allocateMemory(100);
             uint eaxVal = debug.getStackValue(8);
