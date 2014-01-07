@@ -11,29 +11,124 @@ using System.Threading;
 using System.Threading.Tasks;
 namespace NonIntrusive
 {
-    public static class Extensions
+    public enum ContextFlag : uint
     {
-        public enum NIFlags : uint
+        CARRY = 0x01,
+        PARITY = 0x04,
+        ADJUST = 0x10,
+        ZERO = 0x40,
+        SIGN = 0x80,
+        DIRECTION = 0x400,
+        OVERFLOW = 0x800
+    }
+    public class NIContext
+    {
+        public uint ContextFlags; //set this to an appropriate value 
+        // Retrieved by CONTEXT_DEBUG_REGISTERS
+        protected uint Dr0;
+        protected uint Dr1;
+        protected uint Dr2;
+        protected uint Dr3;
+        protected uint Dr6;
+        protected uint Dr7;
+        // Retrieved by CONTEXT_FLOATING_POINT
+        protected Win32.FLOATING_SAVE_AREA FloatSave;
+        // Retrieved by CONTEXT_SEGMENTS
+        protected uint SegGs;
+        protected uint SegFs;
+        protected uint SegEs;
+        protected uint SegDs;
+        // Retrieved by CONTEXT_INTEGER
+        public uint Edi;
+        public uint Esi;
+        public uint Ebx;
+        public uint Edx;
+        public uint Ecx;
+        public uint Eax;
+        // Retrieved by CONTEXT_CONTROL
+        public uint Ebp;
+        public uint Eip;
+        protected uint SegCs;
+        private uint EFlags;
+        public  uint Esp;
+        protected uint SegSs;
+        // Retrieved by CONTEXT_EXTENDED_REGISTERS
+        public byte[] ExtendedRegisters;
+
+
+        public bool GetFlag(ContextFlag i)
         {
-            CARRY = 0x01,
-            PARITY = 0x04,
-            ADJUST = 0x10,
-            ZERO = 0x40,
-            SIGN = 0x80,
-            DIRECTION = 0x400,
-            OVERFLOW = 0x800
+            return (this.EFlags & (uint)i) == (uint)i;
         }
-        public static bool GetFlag(this Win32.CONTEXT ctx, NIFlags i)
+
+        public void SetFlag(ContextFlag i, bool value)
         {
-            return (ctx.EFlags & (uint)i) == (uint)i;
+            this.EFlags -= GetFlag(i) ? (uint)i : 0;
+
+            this.EFlags ^= (value) ? (uint)i : 0;
+
         }
 
-        public static void SetFlag(this Win32.CONTEXT ctx, NIFlags i, bool value)
+        public Win32.CONTEXT ToWin32Context()
         {
-            ctx.EFlags -= GetFlag(ctx, i) ? (uint)i : 0;
+            Win32.CONTEXT ctx = new Win32.CONTEXT();
+            ctx.ContextFlags = ContextFlags;
+            ctx.Dr0 = Dr0;
+            ctx.Dr1 = Dr1;
+            ctx.Dr2 = Dr2;
+            ctx.Dr3 = Dr3;
+            ctx.Dr6 = Dr6;
+            ctx.Dr7 = Dr7;
 
-            ctx.EFlags ^= (value) ? (uint)i : 0;
+            ctx.FloatSave = FloatSave;
+            ctx.SegGs = SegGs;
+            ctx.SegFs = SegFs;
+            ctx.SegEs = SegEs;
+            ctx.SegDs = SegDs;
+            ctx.Edi = Edi;
+            ctx.Esi = Esi;
+            ctx.Ebx = Ebx;
+            ctx.Edx = Edx;
+            ctx.Ecx = Ecx;
+            ctx.Eax = Eax;
+            ctx.Ebp = Ebp;
+            ctx.Eip = Eip;
+            ctx.SegCs = SegCs;
+            ctx.EFlags = EFlags;
+            ctx.Esp = Esp;
+            ctx.SegSs = SegSs;
+            ctx.ExtendedRegisters = ExtendedRegisters;
 
+            return ctx;
+        }
+
+        public NIContext(Win32.CONTEXT ctx)
+        {
+            ContextFlags = ctx.ContextFlags;
+            Dr0 = ctx.Dr0;
+            Dr1 = ctx.Dr1;
+            Dr2 = ctx.Dr2;
+            Dr3 = ctx.Dr3;
+            Dr6 = ctx.Dr6;
+            Dr7 = ctx.Dr7;
+            FloatSave = ctx.FloatSave;
+            SegGs = ctx.SegGs;
+            SegFs = ctx.SegFs;
+            SegEs = ctx.SegEs;
+            SegDs = ctx.SegDs;
+            Edi = ctx.Edi;
+            Esi = ctx.Esi;
+            Ebx = ctx.Ebx;
+            Edx = ctx.Edx;
+            Ecx = ctx.Ecx;
+            Eax = ctx.Eax;
+            Ebp = ctx.Ebp;
+            Eip = ctx.Eip;
+            SegCs = ctx.SegCs;
+            EFlags = ctx.EFlags;
+            Esp = ctx.Esp;
+            SegSs = ctx.SegSs;
+            ExtendedRegisters = ctx.ExtendedRegisters;
         }
     }
     public class NIDebugger
@@ -41,17 +136,18 @@ namespace NonIntrusive
         public bool AutoClearBP = false;
         public bool StepIntoCalls = true;
 
-        public Win32.CONTEXT Context
+        public NIContext Context
         {
             get
             {
+                
                 return contexts[getCurrentThreadId()];
             }
         }
-
+        
         Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
-        Dictionary<int, Win32.CONTEXT> contexts = new Dictionary<int,Win32.CONTEXT>();
+        public Dictionary<int, NIContext> contexts = new Dictionary<int,NIContext>();
         private static ManualResetEvent mre = new ManualResetEvent(false);
         BackgroundWorker bwContinue;
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
@@ -74,7 +170,7 @@ namespace NonIntrusive
         {
             foreach (ProcessThread currThread in debuggedProcess.Threads)
             {
-                Win32.CONTEXT ctx = getContext(currThread.Id);
+                NIContext ctx = getContext(currThread.Id);
                 if (contexts.ContainsKey(currThread.Id))
                 {
                     contexts[currThread.Id] = ctx;
@@ -86,7 +182,7 @@ namespace NonIntrusive
             }
         }
 
-        public Win32.CONTEXT getContext()
+        public NIContext getContext()
         {
             return contexts[debuggedProcessInfo.dwThreadId];
         }
@@ -104,11 +200,11 @@ namespace NonIntrusive
         public void updateContext(int threadId)
         {
             IntPtr hThread = getThreadHandle(threadId);
-            Win32.CONTEXT ctx = contexts[threadId];
+            Win32.CONTEXT ctx = contexts[threadId].ToWin32Context();
             Win32.SetThreadContext(hThread,ref ctx);
         }
 
-        public Win32.CONTEXT getContext(int threadId)
+        public NIContext getContext(int threadId)
         {
 
             IntPtr hThread = getThreadHandle(threadId);
@@ -117,7 +213,7 @@ namespace NonIntrusive
             ctx.ContextFlags = (uint)Win32.CONTEXT_FLAGS.CONTEXT_ALL;
             Win32.GetThreadContext(hThread, ref ctx);
 
-            return ctx;
+            return new NIContext(ctx);
 
         }
 
@@ -152,7 +248,7 @@ namespace NonIntrusive
             else
             {
                 getContexts();
-                Win32.CONTEXT ctx = getContext();
+                NIContext ctx = getContext();
                 uint OEP = ctx.Eax;
                 NIBreakPoint bp = setBreakpoint(OEP);
                 Continue();
@@ -520,7 +616,11 @@ namespace NonIntrusive
             {
                 // we have a long JMP or CALL here
                 int offset = BitConverter.ToInt32(data,ldata.imm_offset);
-                nextAddress = (uint)(Context.Eip + offset) + ldata.size;
+                if ((data[ldata.opcd_offset] == 0xE9) || (StepIntoCalls && (data[ldata.opcd_offset] == 0xE8)))
+                {
+                    nextAddress = (uint)(Context.Eip + offset) + ldata.size;
+                }
+                
             }
 
 
@@ -569,52 +669,52 @@ namespace NonIntrusive
             switch(b)
             {
                 case 0:
-                    willJump = Context.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = Context.GetFlag(ContextFlag.OVERFLOW);
                     break;
                 case 1:
-                    willJump = !Context.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = !Context.GetFlag(ContextFlag.OVERFLOW);
                     break;
                 case 2:
-                    willJump = Context.GetFlag(Extensions.NIFlags.CARRY);
+                    willJump = Context.GetFlag(ContextFlag.CARRY);
                     break;
                 case 3:
-                    willJump = !Context.GetFlag(Extensions.NIFlags.CARRY);
+                    willJump = !Context.GetFlag(ContextFlag.CARRY);
                     break;
                 case 4:
-                    willJump = Context.GetFlag(Extensions.NIFlags.ZERO);
+                    willJump = Context.GetFlag(ContextFlag.ZERO);
                     break;
                 case 5:
-                    willJump = !Context.GetFlag(Extensions.NIFlags.ZERO);
+                    willJump = !Context.GetFlag(ContextFlag.ZERO);
                     break;
                 case 6:
-                    willJump = Context.GetFlag(Extensions.NIFlags.CARRY) || Context.GetFlag(Extensions.NIFlags.ZERO);
+                    willJump = Context.GetFlag(ContextFlag.CARRY) || Context.GetFlag(ContextFlag.ZERO);
                     break;
                 case 7:
-                    willJump = (!Context.GetFlag(Extensions.NIFlags.CARRY)) && (!Context.GetFlag(Extensions.NIFlags.ZERO));
+                    willJump = (!Context.GetFlag(ContextFlag.CARRY)) && (!Context.GetFlag(ContextFlag.ZERO));
                     break;
                 case 8:
-                    willJump = Context.GetFlag(Extensions.NIFlags.SIGN);
+                    willJump = Context.GetFlag(ContextFlag.SIGN);
                     break;
                 case 9:
-                    willJump = !Context.GetFlag(Extensions.NIFlags.SIGN);
+                    willJump = !Context.GetFlag(ContextFlag.SIGN);
                     break;
                 case 0x0a:
-                    willJump = Context.GetFlag(Extensions.NIFlags.PARITY);
+                    willJump = Context.GetFlag(ContextFlag.PARITY);
                     break;
                 case 0x0b:
-                    willJump = !Context.GetFlag(Extensions.NIFlags.PARITY);
+                    willJump = !Context.GetFlag(ContextFlag.PARITY);
                     break;
                 case 0x0c:
-                    willJump = Context.GetFlag(Extensions.NIFlags.SIGN) != Context.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW);
                     break;
                 case 0x0d:
-                    willJump = Context.GetFlag(Extensions.NIFlags.SIGN) == Context.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    willJump = Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW);
                     break;
                 case 0x0e:
-                    willJump = Context.GetFlag(Extensions.NIFlags.ZERO) || (Context.GetFlag(Extensions.NIFlags.SIGN) != Context.GetFlag(Extensions.NIFlags.OVERFLOW));
+                    willJump = Context.GetFlag(ContextFlag.ZERO) || (Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW));
                     break;
                 case 0x0f:
-                    willJump = !Context.GetFlag(Extensions.NIFlags.ZERO) && (Context.GetFlag(Extensions.NIFlags.SIGN) == Context.GetFlag(Extensions.NIFlags.OVERFLOW));
+                    willJump = !Context.GetFlag(ContextFlag.ZERO) && (Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW));
                     break;
                 case 0xE3:
                     willJump = Context.Ecx == 0;

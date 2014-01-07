@@ -224,11 +224,14 @@ namespace NonIntrusive
             // Retrieved by CONTEXT_EXTENDED_REGISTERS
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 512)]
             public byte[] ExtendedRegisters;
+
         }
         #endregion
 
         public const int CREATE_SUSPENDED = 0x4;
         public const int GET_CONTEXT = 0x8;
         public const int SET_CONTEXT = 0x0010;
+
+        
     }
 }

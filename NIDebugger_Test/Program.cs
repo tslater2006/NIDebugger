@@ -12,7 +12,7 @@ namespace NIDebugger_Test
     {
         static void Main(string[] args)
         {
-            ChangeTitle();
+            TestSingleStep();
 
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
@@ -26,19 +26,33 @@ namespace NIDebugger_Test
             opts.executable = @"c:\windows\system32\notepad.exe";
             opts.resumeOnCreate = false;
             debug.AutoClearBP = true;
-
+            debug.StepIntoCalls = false;
+            
             Process p = debug.Execute(opts);
 
-           
+            uint bpAddress = debug.getProcAddress("user32.dll", "SetWindowTextW");
 
-            for (var x = 0; x < 3; x++)
+            NIBreakPoint bp = debug.setBreakpoint(bpAddress);
+
+            debug.Continue();
+
+            for (var x = 0; x < 12; x++)
             {
                 debug.SingleStep();
                 Console.WriteLine("Instruction length: " + debug.getInstrLength());
                 Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
             }
+            NIContext foo = debug.Context;
+
+            foo.SetFlag(ContextFlag.ZERO, true);
 
             debug.SingleStep();
+            Console.WriteLine("Instruction length: " + debug.getInstrLength());
+            Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
+
+            debug.SingleStep();
+            Console.WriteLine("Instruction length: " + debug.getInstrLength());
+            Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
 
             debug.Detach();
 
