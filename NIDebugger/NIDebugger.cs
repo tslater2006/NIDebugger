@@ -440,6 +440,13 @@ namespace NonIntrusive
             return BitConverter.ToString(data, 0, (int)size).Replace("-", " ");
         }
 
+        public void SingleStep(int number)
+        {
+            for (int x = 0; x < number; x++)
+            {
+                SingleStep();
+            }
+        }
 
         public void SingleStep()
         {
