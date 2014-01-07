@@ -38,6 +38,8 @@ namespace NonIntrusive
     }
     public class NIDebugger
     {
+        public bool AutoClearBP = false;
+
         Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
 
@@ -203,6 +205,11 @@ namespace NonIntrusive
             mre.Reset();
             bwContinue.RunWorkerAsync();
             mre.WaitOne();
+
+            if (AutoClearBP)
+            {
+                clearBreakpoint(lastBreakpoint);
+            }
         }
 
         public void Detach()
