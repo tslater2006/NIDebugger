@@ -26,7 +26,8 @@ namespace NIDebugger_Test
             NIBreakPoint bp = debug.setBreakpoint(bpAddress);
 
             debug.Continue();
-            /*Console.WriteLine("Instruction length: " + debug.getInstrLength());
+
+            Console.WriteLine("Instruction length: " + debug.getInstrLength());
             Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
 
             for (var x = 0; x < 15; x++)
@@ -34,7 +35,7 @@ namespace NIDebugger_Test
                 debug.SingleStep();
                 Console.WriteLine("Instruction length: " + debug.getInstrLength());
                 Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
-            }*/
+            }
 
 
             

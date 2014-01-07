@@ -39,6 +39,7 @@ namespace NonIntrusive
     public class NIDebugger
     {
         public bool AutoClearBP = false;
+        public bool StepIntoCalls = true;
 
         Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
@@ -450,13 +451,115 @@ namespace NonIntrusive
                 Array.Copy(breakpoints[address].originalBytes, data, 2);
                 clearBreakpoint(breakpoints[address]);
             }
-            uint size = lde.ldasm(data, 0, false).size;
+
+            ldasm_data ldata = lde.ldasm(data, 0, false);
+
+            uint size = ldata.size;
+            uint nextAddress = ctx.Eip + size;
+
+
+            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] & 0x70) == 0x70 || (data[ldata.opcd_offset] & 0xE3) == 0xE3))
+            {
+                // we have a 1byte jcc here
+                bool willJump = evalJcc(data[ldata.opcd_offset]);
+
+                if (willJump)
+                {
+                    sbyte offset = (sbyte)data[ldata.imm_offset];
+                    nextAddress = (uint)(ctx.Eip + offset) + ldata.size;
+                }
+            }
+
+            if (ldata.opcd_size == 2 && ((data[ldata.opcd_offset] & 0x0F) == 0x70 || (data[ldata.opcd_offset + 1] & 0x80) == 0x80))
+            {
+                // we have a 2 byte jcc here
+
+                bool willJump = evalJcc(data[ldata.opcd_offset + 1]);
+
+                if (willJump)
+                {
+                    byte[] immData = new byte[ldata.imm_size];
+                    Array.Copy(data, ldata.imm_offset, immData, 0, ldata.imm_size);
+
+                    int offset = BitConverter.ToInt32(immData, 0);
+
+                    nextAddress = (uint)((ctx.Eip + offset) + ldata.size);
+                }
+                
+
+            }
+
+
             updateContext();
-            NIBreakPoint stepBP = setBreakpoint(ctx.Eip + size);
+            NIBreakPoint stepBP = setBreakpoint(nextAddress);
             Continue();
 
             clearBreakpoint(stepBP);
             
+        }
+
+        private bool evalJcc(byte b)
+        {
+            if ((b & 0x80) == 0x80) { b -= 0x80;}
+            if ((b & 0x70) == 0x70) { b -= 0x70;}
+
+            bool willJump = false;
+            // determine if we will jump
+            switch(b)
+            {
+                case 0:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    break;
+                case 1:
+                    willJump = !ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    break;
+                case 2:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.CARRY);
+                    break;
+                case 3:
+                    willJump = !ctx.GetFlag(Extensions.NIFlags.CARRY);
+                    break;
+                case 4:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.ZERO);
+                    break;
+                case 5:
+                    willJump = !ctx.GetFlag(Extensions.NIFlags.ZERO);
+                    break;
+                case 6:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.CARRY) || ctx.GetFlag(Extensions.NIFlags.ZERO);
+                    break;
+                case 7:
+                    willJump = (!ctx.GetFlag(Extensions.NIFlags.CARRY)) && (!ctx.GetFlag(Extensions.NIFlags.ZERO));
+                    break;
+                case 8:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.SIGN);
+                    break;
+                case 9:
+                    willJump = !ctx.GetFlag(Extensions.NIFlags.SIGN);
+                    break;
+                case 0x0a:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.PARITY);
+                    break;
+                case 0x0b:
+                    willJump = !ctx.GetFlag(Extensions.NIFlags.PARITY);
+                    break;
+                case 0x0c:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.SIGN) != ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    break;
+                case 0x0d:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.SIGN) == ctx.GetFlag(Extensions.NIFlags.OVERFLOW);
+                    break;
+                case 0x0e:
+                    willJump = ctx.GetFlag(Extensions.NIFlags.ZERO) || (ctx.GetFlag(Extensions.NIFlags.SIGN) != ctx.GetFlag(Extensions.NIFlags.OVERFLOW));
+                    break;
+                case 0x0f:
+                    willJump = !ctx.GetFlag(Extensions.NIFlags.ZERO) && (ctx.GetFlag(Extensions.NIFlags.SIGN) == ctx.GetFlag(Extensions.NIFlags.OVERFLOW));
+                    break;
+                case 0xE3:
+                    willJump = ctx.Ecx == 0;
+                    break;
+            }
+            return willJump;
         }
 
         public uint getDword(uint address)
