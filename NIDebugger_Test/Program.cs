@@ -36,7 +36,7 @@ namespace NIDebugger_Test
 
             debug.Continue();
 
-            for (var x = 0; x < 12; x++)
+            while (debug.getInstrOpcodes().Substring(0,2).Equals("74") == false)
             {
                 debug.SingleStep();
                 Console.WriteLine("Instruction length: " + debug.getInstrLength());
