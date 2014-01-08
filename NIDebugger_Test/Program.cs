@@ -12,7 +12,7 @@ namespace NIDebugger_Test
     {
         static void Main(string[] args)
         {
-            TestSingleStep();
+            ChangeTitle();
 
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
@@ -84,7 +84,8 @@ namespace NIDebugger_Test
 
             debug.setStackValue(8, memoryCave);
 
-
+            DumpOptions dumpOpt = new DumpOptions() { OutputPath = @"C:\Users\Timothy\Desktop\notepad_dump.exe", PerformDumpFix = true };
+            debug.DumpProcess(dumpOpt);
             debug.Detach();
         }
     }

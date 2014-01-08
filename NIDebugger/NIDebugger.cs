@@ -166,10 +166,59 @@ namespace NonIntrusive
         LDASM lde = new LDASM();
 
         private byte[] BREAKPOINT = new byte[] { 0xEB, 0xFE };
-        
-        public File DumpProcess(DumpOptions opts)
+        public UInt16 getWord(uint address)
         {
-            return null;
+            byte[] data = getData(address, 2);
+            return BitConverter.ToUInt16(data, 0);
+        }
+        public void DumpProcess(DumpOptions opts)
+        {
+            try
+            {
+                FileStream fs = File.Create(opts.OutputPath);
+                
+                // get module base
+                var baseAddr = (uint)debuggedProcess.Modules[0].BaseAddress;
+                var peHeader = baseAddr + getDword(baseAddr + 0x3C);
+
+                // update EP in Memory if needed
+                if (opts.ChangeEP)
+                {
+                    writeDword(peHeader + 0x28, opts.EntryPoint);
+                }
+                var numSections = (uint)getWord(peHeader + 0x06);
+                var sectionStartOffset = 0xF8;
+
+                if (opts.PerformDumpFix)
+                {
+                    for (var x = 0; x < numSections; x++)
+                    {
+                        var sectionAddr = peHeader + (uint)(sectionStartOffset + (x * 0x28));
+                        var virtualSize = getDword(sectionAddr + 0x08);
+                        var virtualAddr = getDword(sectionAddr + 0x0c);
+
+                        // update raw values
+                        writeDword(sectionAddr + 0x10, virtualSize);
+                        writeDword(sectionAddr + 0x14, virtualAddr);
+                    }
+                }
+
+                // get address and size of last section
+
+                var lastSectionStart = baseAddr + getDword(peHeader + (uint)(sectionStartOffset + ((numSections -1 ) * 0x28)) + 0x14);
+                var lastSectionSize = getDword(peHeader + (uint)(sectionStartOffset + ((numSections - 1) * 0x28)) + 0x10);
+
+                var imageEnd = baseAddr + lastSectionStart + lastSectionSize;
+
+                byte[] imageData = getData(baseAddr, (int)(imageEnd - baseAddr));
+
+                fs.Write(imageData, 0, imageData.Length);
+                fs.Flush();
+                fs.Close();
+
+
+            }
+            catch (Exception e) { }
         }
 
         public NIDebugger()
