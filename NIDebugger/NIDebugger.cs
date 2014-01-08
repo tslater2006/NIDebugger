@@ -203,12 +203,7 @@ namespace NonIntrusive
                     }
                 }
 
-                // get address and size of last section
-
-                var lastSectionStart = baseAddr + getDword(peHeader + (uint)(sectionStartOffset + ((numSections -1 ) * 0x28)) + 0x14);
-                var lastSectionSize = getDword(peHeader + (uint)(sectionStartOffset + ((numSections - 1) * 0x28)) + 0x10);
-
-                var imageEnd = baseAddr + lastSectionStart + lastSectionSize;
+                var imageEnd = baseAddr + getDword(baseAddr + getDword(baseAddr + 0x3c) + 0x50);
 
                 byte[] imageData = getData(baseAddr, (int)(imageEnd - baseAddr));
 

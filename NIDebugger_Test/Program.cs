@@ -12,7 +12,7 @@ namespace NIDebugger_Test
     {
         static void Main(string[] args)
         {
-            ChangeTitle();
+            TestSingleStep();
 
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
@@ -29,6 +29,8 @@ namespace NIDebugger_Test
             debug.StepIntoCalls = false;
             
             Process p = debug.Execute(opts);
+
+            debug.DumpProcess(new DumpOptions() { OutputPath = @"C:\Users\Timothy\Desktop\Notepad_Dump.exe", ChangeEP = false, PerformDumpFix = true });
 
             uint bpAddress = debug.getProcAddress("user32.dll", "SetWindowTextW");
 
@@ -71,21 +73,23 @@ namespace NIDebugger_Test
 
             uint bpAddress = debug.getProcAddress("user32.dll", "SetWindowTextW");
 
-            NIBreakPoint bp = debug.setBreakpoint(bpAddress);
-
-            debug.Continue();
-
             uint memoryCave = debug.allocateMemory(100);
-            uint eaxVal = debug.getStackValue(8);
-
-            String curVal = debug.readString(debug.Context.Eax, 100, Encoding.Unicode);
-            Console.WriteLine("Old value: " + curVal);
             debug.writeString(memoryCave, "Welcome to NIDebugger", Encoding.Unicode);
 
-            debug.setStackValue(8, memoryCave);
+            while (p.HasExited == false)
+            {
+                NIBreakPoint bp = debug.setBreakpoint(bpAddress);
 
-            DumpOptions dumpOpt = new DumpOptions() { OutputPath = @"C:\Users\Timothy\Desktop\notepad_dump.exe", PerformDumpFix = true };
-            debug.DumpProcess(dumpOpt);
+                debug.Continue();
+                uint oldStringAddr = debug.getStackValue(8);
+
+                String curVal = debug.readString(oldStringAddr, 100, Encoding.Unicode);
+                Console.WriteLine("Old value: " + curVal);
+
+                debug.setStackValue(8, memoryCave);
+                debug.SingleStep();
+            }
+
             debug.Detach();
         }
     }
