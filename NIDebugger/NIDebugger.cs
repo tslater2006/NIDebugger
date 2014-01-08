@@ -635,7 +635,7 @@ namespace NonIntrusive
 
 
 
-            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] & 0x70) == 0x70 || (data[ldata.opcd_offset] & 0xE3) == 0xE3))
+            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] >= 0x70 && (data[ldata.opcd_offset] <= 0x79)) || (data[ldata.opcd_offset] == 0xE3)))
             {
                 // we have a 1byte jcc here
                 bool willJump = evalJcc(data[ldata.opcd_offset]);
