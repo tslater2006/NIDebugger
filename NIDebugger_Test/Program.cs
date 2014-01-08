@@ -23,14 +23,13 @@ namespace NIDebugger_Test
             NIDebugger debug = new NIDebugger();
 
             NIStartupOptions opts = new NonIntrusive.NIStartupOptions();
-            opts.executable = @"c:\windows\system32\notepad.exe";
+            opts.executable = @"C:\Program Files (x86)\PuTTY\putty.exe";
             opts.resumeOnCreate = false;
-            debug.AutoClearBP = true;
             debug.StepIntoCalls = false;
             
             Process p = debug.Execute(opts);
 
-            debug.DumpProcess(new DumpOptions() { OutputPath = @"C:\Users\Timothy\Desktop\Notepad_Dump.exe", ChangeEP = false, PerformDumpFix = true });
+            debug.DumpProcess(new DumpOptions() { OutputPath = @"C:\Users\Timothy\Desktop\Putty_Dump.exe", ChangeEP = false, PerformDumpFix = true });
 
             uint bpAddress = debug.getProcAddress("user32.dll", "SetWindowTextW");
 

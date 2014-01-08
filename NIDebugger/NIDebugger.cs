@@ -141,7 +141,7 @@ namespace NonIntrusive
     }
     public class NIDebugger
     {
-        public bool AutoClearBP = false;
+        public bool AutoClearBP = true;
         public bool StepIntoCalls = true;
 
         public NIContext Context
