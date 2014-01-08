@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -11,6 +12,13 @@ using System.Threading;
 using System.Threading.Tasks;
 namespace NonIntrusive
 {
+    public class DumpOptions
+    {
+        public bool ChangeEP = false;
+        public uint EntryPoint = 0;
+        public bool PerformDumpFix = true;
+        public String OutputPath = "";
+    }
     public enum ContextFlag : uint
     {
         CARRY = 0x01,
@@ -159,7 +167,10 @@ namespace NonIntrusive
 
         private byte[] BREAKPOINT = new byte[] { 0xEB, 0xFE };
         
-
+        public File DumpProcess(DumpOptions opts)
+        {
+            return null;
+        }
 
         public NIDebugger()
         {
@@ -240,7 +251,6 @@ namespace NonIntrusive
 
             debuggedProcess = Process.GetProcessById(debuggedProcessInfo.dwProcessId);
             threadHandles.Add(debuggedProcessInfo.dwThreadId, new IntPtr(debuggedProcessInfo.hThread));
-
             if (opts.resumeOnCreate)
             {
                 Win32.ResumeThread((IntPtr)debuggedProcessInfo.hThread);
