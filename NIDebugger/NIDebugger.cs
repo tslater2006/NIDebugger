@@ -677,8 +677,6 @@ namespace NonIntrusive
                 
             }
 
-
-
             if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] >= 0x70 && (data[ldata.opcd_offset] <= 0x79)) || (data[ldata.opcd_offset] == 0xE3)))
             {
                 // we have a 1byte jcc here
@@ -691,7 +689,7 @@ namespace NonIntrusive
                 }
             }
 
-            if (ldata.opcd_size == 2 && ((data[ldata.opcd_offset] & 0x0F) == 0x70 || (data[ldata.opcd_offset + 1] & 0x80) == 0x80))
+            if (ldata.opcd_size == 2 && ((data[ldata.opcd_offset] == 0x0F)  || (data[ldata.opcd_offset + 1]== 0x80)))
             {
                 // we have a 2 byte jcc here
 
@@ -704,6 +702,77 @@ namespace NonIntrusive
                 }
             }
 
+            if (data[ldata.opcd_offset] == 0xC3 || data[ldata.opcd_offset] == 0xC2)
+            {
+                nextAddress = getStackValue(0);
+            }
+
+            if (data[ldata.opcd_offset] == 0xFF && ldata.opcd_size == 2)
+            {
+                if (data[ldata.opcd_offset + 1] >= 0xD0 && data[ldata.opcd_offset + 1] <= 0xD7 && StepIntoCalls == true)
+                {
+                    // we have a CALL REGISTER
+                    switch (data[ldata.opcd_offset + 1])
+                    {
+                        case 0xD0:
+                            nextAddress = Context.Eax;
+                            break;
+                        case 0xD1:
+                            nextAddress = Context.Ecx;
+                            break;
+                        case 0xD2:
+                            nextAddress = Context.Edx;
+                            break;
+                        case 0xD3:
+                            nextAddress = Context.Ebx;
+                            break;
+                        case 0xD4:
+                            nextAddress = Context.Esp;
+                            break;
+                        case 0xD5:
+                            nextAddress = Context.Ebp;
+                            break;
+                        case 0xD6:
+                            nextAddress = Context.Esi;
+                            break;
+                        case 0xD7:
+                            nextAddress = Context.Edi;
+                            break;
+                    }
+                }
+
+                if (data[ldata.opcd_offset] >= 0xE0 && data[ldata.opcd_offset] <= 0xE7)
+                {
+                    // we have a JMP REGISTER
+                    switch (data[ldata.opcd_offset + 1])
+                    {
+                        case 0xE0:
+                            nextAddress = Context.Eax;
+                            break;
+                        case 0xE1:
+                            nextAddress = Context.Ecx;
+                            break;
+                        case 0xE2:
+                            nextAddress = Context.Edx;
+                            break;
+                        case 0xE3:
+                            nextAddress = Context.Ebx;
+                            break;
+                        case 0xE4:
+                            nextAddress = Context.Esp;
+                            break;
+                        case 0xE5:
+                            nextAddress = Context.Ebp;
+                            break;
+                        case 0xE6:
+                            nextAddress = Context.Esi;
+                            break;
+                        case 0xE7:
+                            nextAddress = Context.Edi;
+                            break;
+                    }
+                }
+            }
 
             updateContexts();
             NIBreakPoint stepBP = setBreakpoint(nextAddress);
