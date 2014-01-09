@@ -17,7 +17,14 @@ namespace NonIntrusive
         #region Properties
         public bool AutoClearBP = true;
         public bool StepIntoCalls = true;
-        
+        public Process Process
+        {
+            get
+            {
+                return debuggedProcess;
+            }
+        }
+
         public NIContext Context
         {
             get
@@ -50,28 +57,25 @@ namespace NonIntrusive
         #region Public Methods
 
         #region Memory Methods
-        public UInt16 ReadWORD(uint address)
+        public NIDebugger ReadWORD(uint address, out UInt16 value)
         {
-            byte[] data = ReadData(address, 2);
-            return BitConverter.ToUInt16(data, 0);
+            byte[] data;
+            ReadData(address, 2, out data);
+            value = BitConverter.ToUInt16(data, 0);
+            return this;
         }
-        public byte[] ReadData(uint address, int length)
+        public NIDebugger ReadData(uint address, int length, out byte[] output)
         {
             int numRead = 0;
             byte[] data = new byte[length];
             Win32.ReadProcessMemory(debuggedProcessInfo.hProcess, (int)address, data, length, ref numRead);
 
-            if (numRead == length)
-            {
-                return data;
-            }
-            else
-            {
-                return null;
-            }
+            output = data;
+
+            return this;
         }
 
-        public bool WriteData(uint address, byte[] data)
+        public NIDebugger WriteData(uint address, byte[] data)
         {
             Win32.MEMORY_BASIC_INFORMATION mbi = new Win32.MEMORY_BASIC_INFORMATION();
 
@@ -85,25 +89,27 @@ namespace NonIntrusive
 
             Win32.VirtualProtectEx((IntPtr)debuggedProcessInfo.hProcess, (IntPtr)mbi.BaseAddress, (UIntPtr)mbi.RegionSize, oldProtect, out oldProtect);
 
-            return numWritten == data.Length;
+            return this;
         }
 
-        public bool WriteString(uint address, String str, Encoding encode)
+        public NIDebugger WriteString(uint address, String str, Encoding encode)
         {
             return WriteData(address, encode.GetBytes(str));
         }
 
-        public String ReadString(uint address, int maxLength, Encoding encode)
+        public NIDebugger ReadString(uint address, int maxLength, Encoding encode, out String value)
         {
-            byte[] data = ReadData(address, maxLength);
-
+            byte[] data;
+            ReadData(address, maxLength, out data);
+            value = "";
             if (encode.IsSingleByte)
             {
                 for (int x = 0; x < data.Length - 1; x++)
                 {
                     if (data[x] == 0)
                     {
-                        return encode.GetString(data, 0, x + 1);
+                        value = encode.GetString(data, 0, x + 1);
+                        break;
                     }
                 }
             }
@@ -113,34 +119,38 @@ namespace NonIntrusive
                 {
                     if (data[x] + data[x + 1] == 0)
                     {
-                        return encode.GetString(data, 0, x + 1);
+                        value = encode.GetString(data, 0, x + 1);
+                        break;
                     }
                 }
             }
-            return encode.GetString(data);
+            return this;
         }
-        public uint ReadDWORD(uint address)
+        public NIDebugger ReadDWORD(uint address, out uint value)
         {
-            byte[] data = ReadData(address, 4);
-            return BitConverter.ToUInt32(data, 0);
+            byte[] data;
+            ReadData(address, 4, out data);
+            value = BitConverter.ToUInt32(data, 0);
+            return this;
         }
 
-        public void WriteDWORD(uint address, uint value)
+        public NIDebugger WriteDWORD(uint address, uint value)
         {
             byte[] data = BitConverter.GetBytes(value);
-            WriteData(address, data);
+            return WriteData(address, data);
         }
 
-        public uint ReadStackValue(uint espOffset)
+        public NIDebugger ReadStackValue(uint espOffset, out uint value)
         {
-            return ReadDWORD(Context.Esp + espOffset);
+            ReadDWORD(Context.Esp + espOffset, out value);
+            return this;
         }
 
-        public void WriteStackValue(uint espOffset, uint value)
+        public NIDebugger WriteStackValue(uint espOffset, uint value)
         {
-            WriteDWORD(Context.Esp + espOffset, value);
+            return WriteDWORD(Context.Esp + espOffset, value);
         }
-        public void DumpProcess(DumpOptions opts)
+        public NIDebugger DumpProcess(DumpOptions opts)
         {
             try
             {
@@ -148,14 +158,18 @@ namespace NonIntrusive
 
                 // get module base
                 var baseAddr = (uint)debuggedProcess.Modules[0].BaseAddress;
-                var peHeader = baseAddr + ReadDWORD(baseAddr + 0x3C);
+                uint peHeader;
+                ReadDWORD(baseAddr + 0x3C, out peHeader);
+                peHeader += baseAddr;
 
                 // update EP in Memory if needed
                 if (opts.ChangeEP)
                 {
                     WriteDWORD(peHeader + 0x28, opts.EntryPoint);
                 }
-                var numSections = (uint)ReadWORD(peHeader + 0x06);
+                ushort numSections;
+                ReadWORD(peHeader + 0x06, out numSections);
+
                 var sectionStartOffset = 0xF8;
 
                 if (opts.PerformDumpFix)
@@ -163,18 +177,24 @@ namespace NonIntrusive
                     for (var x = 0; x < numSections; x++)
                     {
                         var sectionAddr = peHeader + (uint)(sectionStartOffset + (x * 0x28));
-                        var virtualSize = ReadDWORD(sectionAddr + 0x08);
-                        var virtualAddr = ReadDWORD(sectionAddr + 0x0c);
+                        uint virtualSize, virtualAddr;
+
+                        ReadDWORD(sectionAddr + 0x08, out virtualSize);
+                        ReadDWORD(sectionAddr + 0x0c, out virtualAddr);
 
                         // update raw values
                         WriteDWORD(sectionAddr + 0x10, virtualSize);
                         WriteDWORD(sectionAddr + 0x14, virtualAddr);
                     }
                 }
+                uint pePointer, imageEnd;
+                ReadDWORD(baseAddr + 0x3c, out pePointer);
 
-                var imageEnd = baseAddr + ReadDWORD(baseAddr + ReadDWORD(baseAddr + 0x3c) + 0x50);
+                ReadDWORD(baseAddr + pePointer + 0x50, out imageEnd);
+                imageEnd += baseAddr;
 
-                byte[] imageData = ReadData(baseAddr, (int)(imageEnd - baseAddr));
+                byte[] imageData;
+                ReadData(baseAddr, (int)(imageEnd - baseAddr), out imageData);
 
                 fs.Write(imageData, 0, imageData.Length);
                 fs.Flush();
@@ -183,12 +203,14 @@ namespace NonIntrusive
 
             }
             catch (Exception e) { }
+            return this;
         }
-        public uint AllocateMemory(uint size)
+        public NIDebugger AllocateMemory(uint size, out uint address)
         {
             IntPtr memLocation = Win32.VirtualAllocEx((IntPtr)debuggedProcessInfo.hProcess, new IntPtr(), size, (uint)Win32.StateEnum.MEM_RESERVE | (uint)Win32.StateEnum.MEM_COMMIT, (uint)Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE);
 
-            return (uint)memLocation;
+            address = (uint) memLocation;
+            return this;
         }
         public uint FindProcAddress(String modName, String method)
         {
@@ -201,12 +223,16 @@ namespace NonIntrusive
             }
             uint modBase = (uint)module.modBaseAddr;
 
-            uint peAddress = ReadDWORD(modBase + 0x3c);
+            uint peAddress,exportTableAddress,exportTableSize;
+            byte[] exportTable;
 
-            uint exportTableAddress = ReadDWORD(modBase + peAddress + 0x78);
-            uint exportTableSize = ReadDWORD(modBase + peAddress + 0x7C);
+            ReadDWORD(modBase + 0x3c, out peAddress);
 
-            byte[] exportTable = ReadData(modBase + exportTableAddress, (int)exportTableSize);
+            ReadDWORD(modBase + peAddress + 0x78,out exportTableAddress);
+            ReadDWORD(modBase + peAddress + 0x7C,out exportTableSize);
+
+            ReadData(modBase + exportTableAddress, (int)exportTableSize, out exportTable);
+
             uint exportEnd = modBase + exportTableAddress + exportTableSize;
 
 
@@ -250,7 +276,7 @@ namespace NonIntrusive
 
         #region Control Methods
 
-        public Process Execute(NIStartupOptions opts)
+        public NIDebugger Execute(NIStartupOptions opts)
         {
             Win32.SECURITY_ATTRIBUTES sa1 = new Win32.SECURITY_ATTRIBUTES();
             sa1.nLength = Marshal.SizeOf(sa1);
@@ -270,20 +296,20 @@ namespace NonIntrusive
             {
                 getContexts();
                 uint OEP = contexts[debuggedProcessInfo.dwThreadId].Eax;
-                NIBreakPoint bp = SetBreakpoint(OEP);
+                SetBreakpoint(OEP);
                 Continue();
-                ClearBreakpoint(bp);
+                ClearBreakpoint(OEP);
 
                 Console.WriteLine("We should be at OEP");
 
             }
 
-            return debuggedProcess;
+            return this;
 
         }
 
 
-        public void Continue()
+        public NIDebugger Continue()
         {
             updateContexts();
 
@@ -296,8 +322,9 @@ namespace NonIntrusive
 
             if (AutoClearBP)
             {
-                ClearBreakpoint(lastBreakpoint);
+                ClearBreakpoint(lastBreakpoint.bpAddress);
             }
+            return this;
         }
 
         public void Terminate()
@@ -306,7 +333,7 @@ namespace NonIntrusive
             debuggedProcess.Kill();
         }
 
-        public void Detach()
+        public NIDebugger Detach()
         {
             pauseAllThreads();
             List<uint> bpAddresses = breakpoints.Keys.ToList();
@@ -316,38 +343,33 @@ namespace NonIntrusive
             }
             updateContexts();
             resumeAllThreads();
+            return this;
         }
 
-        public NIBreakPoint SetBreakpoint(uint address)
+        public NIDebugger SetBreakpoint(uint address)
         {
             if (breakpoints.Keys.Contains(address) == false)
             {
-                NIBreakPoint bp = new NIBreakPoint() { bpAddress = address, originalBytes = ReadData(address, 2), threadId = 0 };
+                NIBreakPoint bp = new NIBreakPoint() { bpAddress = address};
+                byte[] origBytes;
+                ReadData(address, 2, out origBytes);
+                bp.originalBytes = origBytes;
+
                 breakpoints.Add(address, bp);
                 WriteData(address, BREAKPOINT);
-
-                return bp;
             }
-            return null;
+            return this;
         }
 
-        public bool ClearBreakpoint(NIBreakPoint bp)
-        {
-            return ClearBreakpoint(bp.bpAddress);
-        }
-        public bool ClearBreakpoint(uint address)
+        public NIDebugger ClearBreakpoint(uint address)
         {
             if (breakpoints.Keys.Contains(address))
             {
 
                 WriteData(address, breakpoints[address].originalBytes);
                 breakpoints.Remove(address);
-                return true;
             }
-            else
-            {
-                return false;
-            }
+            return this;
         }
 
         public uint GetInstrLength()
@@ -355,7 +377,8 @@ namespace NonIntrusive
 
             uint address = contexts[getCurrentThreadId()].Eip;
 
-            byte[] data = ReadData(address, 16);
+            byte[] data;
+            ReadData(address, 16,out data);
             if (breakpoints.ContainsKey(address) == true)
             {
                 Array.Copy(breakpoints[address].originalBytes, data, 2);
@@ -364,10 +387,11 @@ namespace NonIntrusive
             return lde.ldasm(data, 0, false).size;
         }
 
-        public String GetInstrOpcodes()
+        public byte[] GetInstrOpcodes()
         {
             uint address = contexts[getCurrentThreadId()].Eip;
-            byte[] data = ReadData(address, 16);
+            byte[] data;
+            ReadData(address, 16, out data);
 
             if (breakpoints.ContainsKey(address) == true)
             {
@@ -376,27 +400,29 @@ namespace NonIntrusive
 
             uint size = lde.ldasm(data, 0, false).size;
 
-            return BitConverter.ToString(data, 0, (int)size).Replace("-", " ");
+            return data;
         }
 
-        public void SingleStep(int number)
+        public NIDebugger SingleStep(int number)
         {
             for (int x = 0; x < number; x++)
             {
                 SingleStep();
             }
+            return this;
         }
 
-        public void SingleStep()
+        public NIDebugger SingleStep()
         {
             updateContexts();
             uint address = Context.Eip;
-            byte[] data = ReadData(address, 16);
+            byte[] data;
+            ReadData(address, 16, out data);
 
             if (breakpoints.ContainsKey(address) == true)
             {
                 Array.Copy(breakpoints[address].originalBytes, data, 2);
-                ClearBreakpoint(breakpoints[address]);
+                ClearBreakpoint(address);
             }
 
             ldasm_data ldata = lde.ldasm(data, 0, false);
@@ -449,15 +475,15 @@ namespace NonIntrusive
 
             if (data[ldata.opcd_offset] == 0xC3 || data[ldata.opcd_offset] == 0xC2)
             {
-                nextAddress = ReadStackValue(0);
+                ReadStackValue(0, out nextAddress);
             }
 
-            if (data[ldata.opcd_offset] == 0xFF && ldata.opcd_size == 2)
+            if (data[ldata.opcd_offset] == 0xFF && ldata.opcd_size == 1 && ldata.modrm != 0x00)
             {
-                if (data[ldata.opcd_offset + 1] >= 0xD0 && data[ldata.opcd_offset + 1] <= 0xD7 && StepIntoCalls == true)
+                if (ldata.modrm >= 0xD0 && ldata.modrm <= 0xD7 && StepIntoCalls == true)
                 {
                     // we have a CALL REGISTER
-                    switch (data[ldata.opcd_offset + 1])
+                    switch (ldata.modrm)
                     {
                         case 0xD0:
                             nextAddress = Context.Eax;
@@ -486,10 +512,10 @@ namespace NonIntrusive
                     }
                 }
 
-                if (data[ldata.opcd_offset] >= 0xE0 && data[ldata.opcd_offset] <= 0xE7)
+                if (ldata.modrm >= 0xE0 && ldata.modrm <= 0xE7)
                 {
                     // we have a JMP REGISTER
-                    switch (data[ldata.opcd_offset + 1])
+                    switch (ldata.modrm)
                     {
                         case 0xE0:
                             nextAddress = Context.Eax;
@@ -520,13 +546,69 @@ namespace NonIntrusive
             }
 
             updateContexts();
-            NIBreakPoint stepBP = SetBreakpoint(nextAddress);
+            SetBreakpoint(nextAddress);
+
             Continue();
 
-            ClearBreakpoint(stepBP);
+            ClearBreakpoint(nextAddress);
+
+            return this;
 
         }
 
+        public NIDebugger SetProcBP(String module, String method)
+        {
+            SetBreakpoint(FindProcAddress(module, method));
+            return this;
+        }
+
+        public NIDebugger ClearProcBP(String module, String method)
+        {
+            ClearBreakpoint(FindProcAddress(module, method));
+            return this;
+        }
+
+        #endregion
+
+        #region Delegate Methods 
+        public NIDebugger While(Func<bool> condition, Action action)
+        {
+            while (condition())
+            {
+                action();
+            }
+
+            return this;
+        }
+
+        public NIDebugger Until(Func<bool> condition, Action action)
+        {
+            while (condition() != true)
+            {
+                action();
+            }
+
+            return this;
+        }
+
+        public NIDebugger Times(uint count, Action action)
+        {
+            for (uint x = 0; x < count; x++)
+            {
+                action();
+            }
+            return this;
+        }
+
+        public NIDebugger If(Func<bool> condition, Action action)
+        {
+            if (condition())
+            {
+                action();
+            }
+
+            return this;
+        }
         #endregion
 
         #endregion
