@@ -31,29 +31,29 @@ namespace NIDebugger_Test
 
             debug.DumpProcess(new DumpOptions() { OutputPath = @"C:\Users\Timothy\Desktop\Putty_Dump.exe", ChangeEP = false, PerformDumpFix = true });
 
-            uint bpAddress = debug.getProcAddress("user32.dll", "SetWindowTextW");
+            uint bpAddress = debug.FindProcAddress("user32.dll", "SetWindowTextW");
 
-            NIBreakPoint bp = debug.setBreakpoint(bpAddress);
+            NIBreakPoint bp = debug.SetBreakpoint(bpAddress);
 
             debug.Continue();
 
-            while (debug.getInstrOpcodes().Substring(0,2).Equals("74") == false)
+            while (debug.GetInstrOpcodes().Substring(0,2).Equals("74") == false)
             {
                 debug.SingleStep();
-                Console.WriteLine("Instruction length: " + debug.getInstrLength());
-                Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
+                Console.WriteLine("Instruction length: " + debug.GetInstrLength());
+                Console.WriteLine("Instruction: " + debug.GetInstrOpcodes());
             }
             NIContext foo = debug.Context;
 
             foo.SetFlag(ContextFlag.ZERO, true);
 
             debug.SingleStep();
-            Console.WriteLine("Instruction length: " + debug.getInstrLength());
-            Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
+            Console.WriteLine("Instruction length: " + debug.GetInstrLength());
+            Console.WriteLine("Instruction: " + debug.GetInstrOpcodes());
 
             debug.SingleStep();
-            Console.WriteLine("Instruction length: " + debug.getInstrLength());
-            Console.WriteLine("Instruction: " + debug.getInstrOpcodes());
+            Console.WriteLine("Instruction length: " + debug.GetInstrLength());
+            Console.WriteLine("Instruction: " + debug.GetInstrOpcodes());
 
             debug.Detach();
 
@@ -70,22 +70,22 @@ namespace NIDebugger_Test
 
             Process p = debug.Execute(opts);
 
-            uint bpAddress = debug.getProcAddress("user32.dll", "SetWindowTextW");
+            uint bpAddress = debug.FindProcAddress("user32.dll", "SetWindowTextW");
 
-            uint memoryCave = debug.allocateMemory(100);
-            debug.writeString(memoryCave, "Welcome to NIDebugger", Encoding.Unicode);
+            uint memoryCave = debug.AllocateMemory(100);
+            debug.WriteString(memoryCave, "Welcome to NIDebugger", Encoding.Unicode);
 
             while (p.HasExited == false)
             {
-                NIBreakPoint bp = debug.setBreakpoint(bpAddress);
+                NIBreakPoint bp = debug.SetBreakpoint(bpAddress);
 
                 debug.Continue();
-                uint oldStringAddr = debug.getStackValue(8);
+                uint oldStringAddr = debug.ReadStackValue(8);
 
-                String curVal = debug.readString(oldStringAddr, 100, Encoding.Unicode);
+                String curVal = debug.ReadString(oldStringAddr, 100, Encoding.Unicode);
                 Console.WriteLine("Old value: " + curVal);
 
-                debug.setStackValue(8, memoryCave);
+                debug.WriteStackValue(8, memoryCave);
                 debug.SingleStep();
             }
 

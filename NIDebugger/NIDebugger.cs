@@ -12,6 +12,753 @@ using System.Threading;
 using System.Threading.Tasks;
 namespace NonIntrusive
 {
+    public class NIDebugger
+    {
+        #region Properties
+        public bool AutoClearBP = true;
+        public bool StepIntoCalls = true;
+        
+        public NIContext Context
+        {
+            get
+            {
+
+                return contexts[getCurrentThreadId()];
+            }
+        }
+
+        #endregion
+
+        #region Private Variables
+
+        Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
+        Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
+        public Dictionary<int, NIContext> contexts = new Dictionary<int, NIContext>();
+        private static ManualResetEvent mre = new ManualResetEvent(false);
+        BackgroundWorker bwContinue;
+        Win32.PROCESS_INFORMATION debuggedProcessInfo;
+
+        NIBreakPoint lastBreakpoint;
+
+        Process debuggedProcess;
+        LDASM lde = new LDASM();
+
+        private byte[] BREAKPOINT = new byte[] { 0xEB, 0xFE };
+
+        #endregion
+
+        #region Public Methods
+
+        #region Memory Methods
+        public UInt16 ReadWORD(uint address)
+        {
+            byte[] data = ReadData(address, 2);
+            return BitConverter.ToUInt16(data, 0);
+        }
+        public byte[] ReadData(uint address, int length)
+        {
+            int numRead = 0;
+            byte[] data = new byte[length];
+            Win32.ReadProcessMemory(debuggedProcessInfo.hProcess, (int)address, data, length, ref numRead);
+
+            if (numRead == length)
+            {
+                return data;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        public bool WriteData(uint address, byte[] data)
+        {
+            Win32.MEMORY_BASIC_INFORMATION mbi = new Win32.MEMORY_BASIC_INFORMATION();
+
+            Win32.VirtualQueryEx(debuggedProcessInfo.hProcess, (int)address, ref mbi, Marshal.SizeOf(mbi));
+            uint oldProtect = 0;
+
+            Win32.VirtualProtectEx((IntPtr)debuggedProcessInfo.hProcess, (IntPtr)mbi.BaseAddress, (UIntPtr)mbi.RegionSize, (uint)Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE, out oldProtect);
+
+            int numWritten = 0;
+            Win32.WriteProcessMemory(debuggedProcessInfo.hProcess, (int)address, data, data.Length, ref numWritten);
+
+            Win32.VirtualProtectEx((IntPtr)debuggedProcessInfo.hProcess, (IntPtr)mbi.BaseAddress, (UIntPtr)mbi.RegionSize, oldProtect, out oldProtect);
+
+            return numWritten == data.Length;
+        }
+
+        public bool WriteString(uint address, String str, Encoding encode)
+        {
+            return WriteData(address, encode.GetBytes(str));
+        }
+
+        public String ReadString(uint address, int maxLength, Encoding encode)
+        {
+            byte[] data = ReadData(address, maxLength);
+
+            if (encode.IsSingleByte)
+            {
+                for (int x = 0; x < data.Length - 1; x++)
+                {
+                    if (data[x] == 0)
+                    {
+                        return encode.GetString(data, 0, x + 1);
+                    }
+                }
+            }
+            else
+            {
+                for (int x = 0; x < data.Length - 2; x++)
+                {
+                    if (data[x] + data[x + 1] == 0)
+                    {
+                        return encode.GetString(data, 0, x + 1);
+                    }
+                }
+            }
+            return encode.GetString(data);
+        }
+        public uint ReadDWORD(uint address)
+        {
+            byte[] data = ReadData(address, 4);
+            return BitConverter.ToUInt32(data, 0);
+        }
+
+        public void WriteDWORD(uint address, uint value)
+        {
+            byte[] data = BitConverter.GetBytes(value);
+            WriteData(address, data);
+        }
+
+        public uint ReadStackValue(uint espOffset)
+        {
+            return ReadDWORD(Context.Esp + espOffset);
+        }
+
+        public void WriteStackValue(uint espOffset, uint value)
+        {
+            WriteDWORD(Context.Esp + espOffset, value);
+        }
+        public void DumpProcess(DumpOptions opts)
+        {
+            try
+            {
+                FileStream fs = File.Create(opts.OutputPath);
+
+                // get module base
+                var baseAddr = (uint)debuggedProcess.Modules[0].BaseAddress;
+                var peHeader = baseAddr + ReadDWORD(baseAddr + 0x3C);
+
+                // update EP in Memory if needed
+                if (opts.ChangeEP)
+                {
+                    WriteDWORD(peHeader + 0x28, opts.EntryPoint);
+                }
+                var numSections = (uint)ReadWORD(peHeader + 0x06);
+                var sectionStartOffset = 0xF8;
+
+                if (opts.PerformDumpFix)
+                {
+                    for (var x = 0; x < numSections; x++)
+                    {
+                        var sectionAddr = peHeader + (uint)(sectionStartOffset + (x * 0x28));
+                        var virtualSize = ReadDWORD(sectionAddr + 0x08);
+                        var virtualAddr = ReadDWORD(sectionAddr + 0x0c);
+
+                        // update raw values
+                        WriteDWORD(sectionAddr + 0x10, virtualSize);
+                        WriteDWORD(sectionAddr + 0x14, virtualAddr);
+                    }
+                }
+
+                var imageEnd = baseAddr + ReadDWORD(baseAddr + ReadDWORD(baseAddr + 0x3c) + 0x50);
+
+                byte[] imageData = ReadData(baseAddr, (int)(imageEnd - baseAddr));
+
+                fs.Write(imageData, 0, imageData.Length);
+                fs.Flush();
+                fs.Close();
+
+
+            }
+            catch (Exception e) { }
+        }
+        public uint AllocateMemory(uint size)
+        {
+            IntPtr memLocation = Win32.VirtualAllocEx((IntPtr)debuggedProcessInfo.hProcess, new IntPtr(), size, (uint)Win32.StateEnum.MEM_RESERVE | (uint)Win32.StateEnum.MEM_COMMIT, (uint)Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE);
+
+            return (uint)memLocation;
+        }
+        public uint FindProcAddress(String modName, String method)
+        {
+            Win32.MODULEENTRY32 module = getModule(modName);
+
+            if (module.dwSize == 0)
+            {
+                Console.WriteLine("Failed to find module");
+                throw new Exception("Target doesn't have module: " + modName + " loaded.");
+            }
+            uint modBase = (uint)module.modBaseAddr;
+
+            uint peAddress = ReadDWORD(modBase + 0x3c);
+
+            uint exportTableAddress = ReadDWORD(modBase + peAddress + 0x78);
+            uint exportTableSize = ReadDWORD(modBase + peAddress + 0x7C);
+
+            byte[] exportTable = ReadData(modBase + exportTableAddress, (int)exportTableSize);
+            uint exportEnd = modBase + exportTableAddress + exportTableSize;
+
+
+            uint numberOfFunctions = BitConverter.ToUInt32(exportTable, 0x14);
+            uint numberOfNames = BitConverter.ToUInt32(exportTable, 0x18);
+
+            uint functionAddressBase = BitConverter.ToUInt32(exportTable, 0x1c);
+            uint nameAddressBase = BitConverter.ToUInt32(exportTable, 0x20);
+            uint ordinalAddressBase = BitConverter.ToUInt32(exportTable, 0x24);
+
+            StringBuilder sb = new StringBuilder();
+            for (int x = 0; x < numberOfNames; x++)
+            {
+                sb.Clear();
+                uint namePtr = BitConverter.ToUInt32(exportTable, (int)(nameAddressBase - exportTableAddress) + (x * 4)) - exportTableAddress;
+
+                while (exportTable[namePtr] != 0)
+                {
+                    sb.Append((char)exportTable[namePtr]);
+                    namePtr++;
+                }
+
+                ushort funcOrdinal = BitConverter.ToUInt16(exportTable, (int)(ordinalAddressBase - exportTableAddress) + (x * 2));
+
+
+                uint funcAddress = BitConverter.ToUInt32(exportTable, (int)(functionAddressBase - exportTableAddress) + (funcOrdinal * 4));
+                funcAddress += modBase;
+
+                if (sb.ToString().Equals(method))
+                {
+                    return funcAddress;
+                }
+                //  functions.Add(new ExportedFunction(){name = sb.ToString(), address = funcAddress});
+
+            }
+            return 0;
+
+
+        }
+        #endregion
+
+        #region Control Methods
+
+        public Process Execute(NIStartupOptions opts)
+        {
+            Win32.SECURITY_ATTRIBUTES sa1 = new Win32.SECURITY_ATTRIBUTES();
+            sa1.nLength = Marshal.SizeOf(sa1);
+            Win32.SECURITY_ATTRIBUTES sa2 = new Win32.SECURITY_ATTRIBUTES();
+            sa2.nLength = Marshal.SizeOf(sa2);
+            Win32.STARTUPINFO si = new Win32.STARTUPINFO();
+            debuggedProcessInfo = new Win32.PROCESS_INFORMATION();
+            int ret = Win32.CreateProcess(opts.executable, opts.commandLine, ref sa1, ref sa2, 0, 0x00000200 | Win32.CREATE_SUSPENDED, 0, null, ref si, ref debuggedProcessInfo);
+
+            debuggedProcess = Process.GetProcessById(debuggedProcessInfo.dwProcessId);
+            threadHandles.Add(debuggedProcessInfo.dwThreadId, new IntPtr(debuggedProcessInfo.hThread));
+            if (opts.resumeOnCreate)
+            {
+                Win32.ResumeThread((IntPtr)debuggedProcessInfo.hThread);
+            }
+            else
+            {
+                getContexts();
+                uint OEP = contexts[debuggedProcessInfo.dwThreadId].Eax;
+                NIBreakPoint bp = SetBreakpoint(OEP);
+                Continue();
+                ClearBreakpoint(bp);
+
+                Console.WriteLine("We should be at OEP");
+
+            }
+
+            return debuggedProcess;
+
+        }
+
+
+        public void Continue()
+        {
+            updateContexts();
+
+            bwContinue = new BackgroundWorker();
+            bwContinue.DoWork += bw_Continue;
+
+            mre.Reset();
+            bwContinue.RunWorkerAsync();
+            mre.WaitOne();
+
+            if (AutoClearBP)
+            {
+                ClearBreakpoint(lastBreakpoint);
+            }
+        }
+
+        public void Terminate()
+        {
+            Continue();
+            debuggedProcess.Kill();
+        }
+
+        public void Detach()
+        {
+            pauseAllThreads();
+            List<uint> bpAddresses = breakpoints.Keys.ToList();
+            foreach (uint addr in bpAddresses)
+            {
+                ClearBreakpoint(addr);
+            }
+            updateContexts();
+            resumeAllThreads();
+        }
+
+        public NIBreakPoint SetBreakpoint(uint address)
+        {
+            if (breakpoints.Keys.Contains(address) == false)
+            {
+                NIBreakPoint bp = new NIBreakPoint() { bpAddress = address, originalBytes = ReadData(address, 2), threadId = 0 };
+                breakpoints.Add(address, bp);
+                WriteData(address, BREAKPOINT);
+
+                return bp;
+            }
+            return null;
+        }
+
+        public bool ClearBreakpoint(NIBreakPoint bp)
+        {
+            return ClearBreakpoint(bp.bpAddress);
+        }
+        public bool ClearBreakpoint(uint address)
+        {
+            if (breakpoints.Keys.Contains(address))
+            {
+
+                WriteData(address, breakpoints[address].originalBytes);
+                breakpoints.Remove(address);
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        public uint GetInstrLength()
+        {
+
+            uint address = contexts[getCurrentThreadId()].Eip;
+
+            byte[] data = ReadData(address, 16);
+            if (breakpoints.ContainsKey(address) == true)
+            {
+                Array.Copy(breakpoints[address].originalBytes, data, 2);
+            }
+
+            return lde.ldasm(data, 0, false).size;
+        }
+
+        public String GetInstrOpcodes()
+        {
+            uint address = contexts[getCurrentThreadId()].Eip;
+            byte[] data = ReadData(address, 16);
+
+            if (breakpoints.ContainsKey(address) == true)
+            {
+                Array.Copy(breakpoints[address].originalBytes, data, 2);
+            }
+
+            uint size = lde.ldasm(data, 0, false).size;
+
+            return BitConverter.ToString(data, 0, (int)size).Replace("-", " ");
+        }
+
+        public void SingleStep(int number)
+        {
+            for (int x = 0; x < number; x++)
+            {
+                SingleStep();
+            }
+        }
+
+        public void SingleStep()
+        {
+            updateContexts();
+            uint address = Context.Eip;
+            byte[] data = ReadData(address, 16);
+
+            if (breakpoints.ContainsKey(address) == true)
+            {
+                Array.Copy(breakpoints[address].originalBytes, data, 2);
+                ClearBreakpoint(breakpoints[address]);
+            }
+
+            ldasm_data ldata = lde.ldasm(data, 0, false);
+
+            uint size = ldata.size;
+            uint nextAddress = Context.Eip + size;
+
+            if (ldata.opcd_size == 1 && (data[ldata.opcd_offset] == 0xEB))
+            {
+                // we have a 1 byte JMP here
+                sbyte offset = (sbyte)data[ldata.imm_offset];
+                nextAddress = (uint)(Context.Eip + offset) + ldata.size;
+            }
+
+            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] == 0xE9) || (data[ldata.opcd_offset] == 0xE8)))
+            {
+                // we have a long JMP or CALL here
+                int offset = BitConverter.ToInt32(data, ldata.imm_offset);
+                if ((data[ldata.opcd_offset] == 0xE9) || (StepIntoCalls && (data[ldata.opcd_offset] == 0xE8)))
+                {
+                    nextAddress = (uint)(Context.Eip + offset) + ldata.size;
+                }
+
+            }
+
+            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] >= 0x70 && (data[ldata.opcd_offset] <= 0x79)) || (data[ldata.opcd_offset] == 0xE3)))
+            {
+                // we have a 1byte jcc here
+                bool willJump = evalJcc(data[ldata.opcd_offset]);
+
+                if (willJump)
+                {
+                    sbyte offset = (sbyte)data[ldata.imm_offset];
+                    nextAddress = (uint)(Context.Eip + offset) + ldata.size;
+                }
+            }
+
+            if (ldata.opcd_size == 2 && ((data[ldata.opcd_offset] == 0x0F) || (data[ldata.opcd_offset + 1] == 0x80)))
+            {
+                // we have a 2 byte jcc here
+
+                bool willJump = evalJcc(data[ldata.opcd_offset + 1]);
+
+                if (willJump)
+                {
+                    int offset = BitConverter.ToInt32(data, ldata.imm_offset);
+                    nextAddress = (uint)((Context.Eip + offset) + ldata.size);
+                }
+            }
+
+            if (data[ldata.opcd_offset] == 0xC3 || data[ldata.opcd_offset] == 0xC2)
+            {
+                nextAddress = ReadStackValue(0);
+            }
+
+            if (data[ldata.opcd_offset] == 0xFF && ldata.opcd_size == 2)
+            {
+                if (data[ldata.opcd_offset + 1] >= 0xD0 && data[ldata.opcd_offset + 1] <= 0xD7 && StepIntoCalls == true)
+                {
+                    // we have a CALL REGISTER
+                    switch (data[ldata.opcd_offset + 1])
+                    {
+                        case 0xD0:
+                            nextAddress = Context.Eax;
+                            break;
+                        case 0xD1:
+                            nextAddress = Context.Ecx;
+                            break;
+                        case 0xD2:
+                            nextAddress = Context.Edx;
+                            break;
+                        case 0xD3:
+                            nextAddress = Context.Ebx;
+                            break;
+                        case 0xD4:
+                            nextAddress = Context.Esp;
+                            break;
+                        case 0xD5:
+                            nextAddress = Context.Ebp;
+                            break;
+                        case 0xD6:
+                            nextAddress = Context.Esi;
+                            break;
+                        case 0xD7:
+                            nextAddress = Context.Edi;
+                            break;
+                    }
+                }
+
+                if (data[ldata.opcd_offset] >= 0xE0 && data[ldata.opcd_offset] <= 0xE7)
+                {
+                    // we have a JMP REGISTER
+                    switch (data[ldata.opcd_offset + 1])
+                    {
+                        case 0xE0:
+                            nextAddress = Context.Eax;
+                            break;
+                        case 0xE1:
+                            nextAddress = Context.Ecx;
+                            break;
+                        case 0xE2:
+                            nextAddress = Context.Edx;
+                            break;
+                        case 0xE3:
+                            nextAddress = Context.Ebx;
+                            break;
+                        case 0xE4:
+                            nextAddress = Context.Esp;
+                            break;
+                        case 0xE5:
+                            nextAddress = Context.Ebp;
+                            break;
+                        case 0xE6:
+                            nextAddress = Context.Esi;
+                            break;
+                        case 0xE7:
+                            nextAddress = Context.Edi;
+                            break;
+                    }
+                }
+            }
+
+            updateContexts();
+            NIBreakPoint stepBP = SetBreakpoint(nextAddress);
+            Continue();
+
+            ClearBreakpoint(stepBP);
+
+        }
+
+        #endregion
+
+        #endregion
+
+
+
+        #region Private Methods
+
+        private void getContexts()
+        {
+            foreach (ProcessThread currThread in debuggedProcess.Threads)
+            {
+                NIContext ctx = getContext(currThread.Id);
+                if (contexts.ContainsKey(currThread.Id))
+                {
+                    contexts[currThread.Id] = ctx;
+                }
+                else
+                {
+                    contexts.Add(currThread.Id, ctx);
+                }
+            }
+        }
+
+        private void updateContexts()
+        {
+            var keys = contexts.Keys.ToList<int>();
+            for (var x = 0; x < keys.Count; x++ )
+            {
+                updateContext(keys[x]);
+            }
+        }
+
+        private void updateContext(int threadId)
+        {
+            IntPtr hThread = getThreadHandle(threadId);
+            Win32.CONTEXT ctx = contexts[threadId].ToWin32Context();
+            Win32.SetThreadContext(hThread,ref ctx);
+        }
+
+        private NIContext getContext(int threadId)
+        {
+
+            IntPtr hThread = getThreadHandle(threadId);
+
+            Win32.CONTEXT ctx = new Win32.CONTEXT();
+            ctx.ContextFlags = (uint)Win32.CONTEXT_FLAGS.CONTEXT_ALL;
+            Win32.GetThreadContext(hThread, ref ctx);
+
+            return new NIContext(ctx);
+
+        }
+
+        private IntPtr getThreadHandle(int threadId)
+        {
+            IntPtr handle = threadHandles.ContainsKey(threadId) ? threadHandles[threadId] : new IntPtr(-1);
+            if (handle.Equals(-1))
+            {
+                handle = Win32.OpenThread(Win32.GET_CONTEXT | Win32.SET_CONTEXT, false, (uint)threadId);
+                threadHandles.Add(threadId, handle);
+            }
+            return handle;
+        }
+
+        
+        private void bw_Continue(object sender, DoWorkEventArgs e)
+        {
+            BackgroundWorker worker = sender as BackgroundWorker;
+            while (1==1)
+            {
+                if (debuggedProcess.HasExited)
+                {
+                    return;
+                }
+                pauseAllThreads();
+                //Console.WriteLine("threads paused");
+                foreach (uint address in breakpoints.Keys)
+                {
+                    foreach (ProcessThread pThread in debuggedProcess.Threads)
+                    {
+                        if (getContext(pThread.Id).Eip == address)
+                        {
+                            Console.WriteLine("We hit a breakpoint: " + address.ToString("X"));
+                            lastBreakpoint = breakpoints[address];
+                            lastBreakpoint.threadId = (uint)pThread.Id;
+
+                            getContexts();
+
+                            e.Cancel = true;
+                            mre.Set();
+                            return;
+                        }
+                    }
+                }
+                resumeAllThreads();
+                //Console.WriteLine("threads resumed");
+            }
+        }
+
+        private void pauseAllThreads()
+        {
+            foreach (ProcessThread t in debuggedProcess.Threads)
+            {
+                IntPtr hThread = getThreadHandle(t.Id);
+                Win32.SuspendThread(hThread);
+            }
+        }
+
+        private void resumeAllThreads()
+        {
+            foreach (ProcessThread t in debuggedProcess.Threads)
+            {
+                IntPtr hThread = getThreadHandle(t.Id);
+                int result = Win32.ResumeThread(hThread);
+                while (result > 1)
+                {
+                    result = Win32.ResumeThread(hThread);
+                }
+            }
+        }
+        
+        private Win32.MODULEENTRY32 getModule(String modName)
+        {
+            IntPtr hSnap = Win32.CreateToolhelp32Snapshot(Win32.SnapshotFlags.NoHeaps | Win32.SnapshotFlags.Module, (uint) debuggedProcessInfo.dwProcessId);
+            Win32.MODULEENTRY32 module = new Win32.MODULEENTRY32();
+            module.dwSize = (uint)Marshal.SizeOf(module);
+            Win32.Module32First(hSnap, ref module);
+
+            if (module.szModule.Equals(modName,StringComparison.CurrentCultureIgnoreCase))
+            {
+                return module;
+            }
+
+            while (Win32.Module32Next(hSnap,ref module))
+            {
+                if (module.szModule.Equals(modName, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return module;
+                }
+            }
+            module = new Win32.MODULEENTRY32();
+            Win32.CloseHandle(hSnap);
+            return module;
+        }
+
+        
+
+        private int getCurrentThreadId()
+        {
+            int thread;
+            // determine the thread
+            if (lastBreakpoint != null)
+            {
+                thread = (int)lastBreakpoint.threadId;
+            }
+            else
+            {
+                thread = debuggedProcessInfo.dwThreadId;
+            }
+            return thread;
+        }
+
+       
+
+        private bool evalJcc(byte b)
+        {
+            if ((b & 0x80) == 0x80) { b -= 0x80;}
+            if ((b & 0x70) == 0x70) { b -= 0x70;}
+
+            bool willJump = false;
+            // determine if we will jump
+            switch(b)
+            {
+                case 0:
+                    willJump = Context.GetFlag(ContextFlag.OVERFLOW);
+                    break;
+                case 1:
+                    willJump = !Context.GetFlag(ContextFlag.OVERFLOW);
+                    break;
+                case 2:
+                    willJump = Context.GetFlag(ContextFlag.CARRY);
+                    break;
+                case 3:
+                    willJump = !Context.GetFlag(ContextFlag.CARRY);
+                    break;
+                case 4:
+                    willJump = Context.GetFlag(ContextFlag.ZERO);
+                    break;
+                case 5:
+                    willJump = !Context.GetFlag(ContextFlag.ZERO);
+                    break;
+                case 6:
+                    willJump = Context.GetFlag(ContextFlag.CARRY) || Context.GetFlag(ContextFlag.ZERO);
+                    break;
+                case 7:
+                    willJump = (!Context.GetFlag(ContextFlag.CARRY)) && (!Context.GetFlag(ContextFlag.ZERO));
+                    break;
+                case 8:
+                    willJump = Context.GetFlag(ContextFlag.SIGN);
+                    break;
+                case 9:
+                    willJump = !Context.GetFlag(ContextFlag.SIGN);
+                    break;
+                case 0x0a:
+                    willJump = Context.GetFlag(ContextFlag.PARITY);
+                    break;
+                case 0x0b:
+                    willJump = !Context.GetFlag(ContextFlag.PARITY);
+                    break;
+                case 0x0c:
+                    willJump = Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW);
+                    break;
+                case 0x0d:
+                    willJump = Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW);
+                    break;
+                case 0x0e:
+                    willJump = Context.GetFlag(ContextFlag.ZERO) || (Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW));
+                    break;
+                case 0x0f:
+                    willJump = !Context.GetFlag(ContextFlag.ZERO) && (Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW));
+                    break;
+                case 0xE3:
+                    willJump = Context.Ecx == 0;
+                    break;
+            }
+            return willJump;
+        }
+
+        #endregion
+
+    }
+
     public class DumpOptions
     {
         public bool ChangeEP = false;
@@ -58,7 +805,7 @@ namespace NonIntrusive
         public uint Eip;
         protected uint SegCs;
         private uint EFlags;
-        public  uint Esp;
+        public uint Esp;
         protected uint SegSs;
         // Retrieved by CONTEXT_EXTENDED_REGISTERS
         public byte[] ExtendedRegisters;
@@ -139,738 +886,6 @@ namespace NonIntrusive
             ExtendedRegisters = ctx.ExtendedRegisters;
         }
     }
-    public class NIDebugger
-    {
-        public bool AutoClearBP = true;
-        public bool StepIntoCalls = true;
-
-        public NIContext Context
-        {
-            get
-            {
-                
-                return contexts[getCurrentThreadId()];
-            }
-        }
-        
-        Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
-        Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
-        public Dictionary<int, NIContext> contexts = new Dictionary<int,NIContext>();
-        private static ManualResetEvent mre = new ManualResetEvent(false);
-        BackgroundWorker bwContinue;
-        Win32.PROCESS_INFORMATION debuggedProcessInfo;
-
-        NIBreakPoint lastBreakpoint; 
-
-        Process debuggedProcess;
-        LDASM lde = new LDASM();
-
-        private byte[] BREAKPOINT = new byte[] { 0xEB, 0xFE };
-        public UInt16 getWord(uint address)
-        {
-            byte[] data = getData(address, 2);
-            return BitConverter.ToUInt16(data, 0);
-        }
-        public void DumpProcess(DumpOptions opts)
-        {
-            try
-            {
-                FileStream fs = File.Create(opts.OutputPath);
-                
-                // get module base
-                var baseAddr = (uint)debuggedProcess.Modules[0].BaseAddress;
-                var peHeader = baseAddr + getDword(baseAddr + 0x3C);
-
-                // update EP in Memory if needed
-                if (opts.ChangeEP)
-                {
-                    writeDword(peHeader + 0x28, opts.EntryPoint);
-                }
-                var numSections = (uint)getWord(peHeader + 0x06);
-                var sectionStartOffset = 0xF8;
-
-                if (opts.PerformDumpFix)
-                {
-                    for (var x = 0; x < numSections; x++)
-                    {
-                        var sectionAddr = peHeader + (uint)(sectionStartOffset + (x * 0x28));
-                        var virtualSize = getDword(sectionAddr + 0x08);
-                        var virtualAddr = getDword(sectionAddr + 0x0c);
-
-                        // update raw values
-                        writeDword(sectionAddr + 0x10, virtualSize);
-                        writeDword(sectionAddr + 0x14, virtualAddr);
-                    }
-                }
-
-                var imageEnd = baseAddr + getDword(baseAddr + getDword(baseAddr + 0x3c) + 0x50);
-
-                byte[] imageData = getData(baseAddr, (int)(imageEnd - baseAddr));
-
-                fs.Write(imageData, 0, imageData.Length);
-                fs.Flush();
-                fs.Close();
-
-
-            }
-            catch (Exception e) { }
-        }
-
-        public NIDebugger()
-        {
-        }
-
-
-        private void getContexts()
-        {
-            foreach (ProcessThread currThread in debuggedProcess.Threads)
-            {
-                NIContext ctx = getContext(currThread.Id);
-                if (contexts.ContainsKey(currThread.Id))
-                {
-                    contexts[currThread.Id] = ctx;
-                }
-                else
-                {
-                    contexts.Add(currThread.Id, ctx);
-                }
-            }
-        }
-
-        public NIContext getContext()
-        {
-            return contexts[debuggedProcessInfo.dwThreadId];
-        }
-
-
-        public void updateContexts()
-        {
-            var keys = contexts.Keys.ToList<int>();
-            for (var x = 0; x < keys.Count; x++ )
-            {
-                updateContext(keys[x]);
-            }
-        }
-
-        public void updateContext(int threadId)
-        {
-            IntPtr hThread = getThreadHandle(threadId);
-            Win32.CONTEXT ctx = contexts[threadId].ToWin32Context();
-            Win32.SetThreadContext(hThread,ref ctx);
-        }
-
-        public NIContext getContext(int threadId)
-        {
-
-            IntPtr hThread = getThreadHandle(threadId);
-
-            Win32.CONTEXT ctx = new Win32.CONTEXT();
-            ctx.ContextFlags = (uint)Win32.CONTEXT_FLAGS.CONTEXT_ALL;
-            Win32.GetThreadContext(hThread, ref ctx);
-
-            return new NIContext(ctx);
-
-        }
-
-        private IntPtr getThreadHandle(int threadId)
-        {
-            IntPtr handle = threadHandles.ContainsKey(threadId) ? threadHandles[threadId] : new IntPtr(-1);
-            if (handle.Equals(-1))
-            {
-                handle = Win32.OpenThread(Win32.GET_CONTEXT | Win32.SET_CONTEXT, false, (uint)threadId);
-                threadHandles.Add(threadId, handle);
-            }
-            return handle;
-        }
-
-        public Process Execute(NIStartupOptions opts)
-        {
-            Win32.SECURITY_ATTRIBUTES sa1 = new Win32.SECURITY_ATTRIBUTES();
-            sa1.nLength = Marshal.SizeOf(sa1);
-            Win32.SECURITY_ATTRIBUTES sa2 = new Win32.SECURITY_ATTRIBUTES();
-            sa2.nLength = Marshal.SizeOf(sa2);
-            Win32.STARTUPINFO si = new Win32.STARTUPINFO();
-            debuggedProcessInfo = new Win32.PROCESS_INFORMATION();
-            int ret = Win32.CreateProcess(opts.executable, opts.commandLine, ref sa1, ref sa2, 0, 0x00000200 | Win32.CREATE_SUSPENDED, 0, null, ref si, ref debuggedProcessInfo);
-
-            debuggedProcess = Process.GetProcessById(debuggedProcessInfo.dwProcessId);
-            threadHandles.Add(debuggedProcessInfo.dwThreadId, new IntPtr(debuggedProcessInfo.hThread));
-            if (opts.resumeOnCreate)
-            {
-                Win32.ResumeThread((IntPtr)debuggedProcessInfo.hThread);
-            }
-            else
-            {
-                getContexts();
-                NIContext ctx = getContext();
-                uint OEP = ctx.Eax;
-                NIBreakPoint bp = setBreakpoint(OEP);
-                Continue();
-                clearBreakpoint(bp);
-
-                Console.WriteLine("We should be at OEP");
-
-            }
-
-            return debuggedProcess;
-
-        }
-
-        private void bw_Continue(object sender, DoWorkEventArgs e)
-        {
-            BackgroundWorker worker = sender as BackgroundWorker;
-            while (1==1)
-            {
-                if (debuggedProcess.HasExited)
-                {
-                    return;
-                }
-                pauseAllThreads();
-                //Console.WriteLine("threads paused");
-                foreach (uint address in breakpoints.Keys)
-                {
-                    foreach (ProcessThread pThread in debuggedProcess.Threads)
-                    {
-                        if (getContext(pThread.Id).Eip == address)
-                        {
-                            Console.WriteLine("We hit a breakpoint: " + address.ToString("X"));
-                            lastBreakpoint = breakpoints[address];
-                            lastBreakpoint.threadId = (uint)pThread.Id;
-
-                            getContexts();
-
-                            e.Cancel = true;
-                            mre.Set();
-                            return;
-                        }
-                    }
-                }
-                resumeAllThreads();
-                //Console.WriteLine("threads resumed");
-            }
-        }
-
-        private void pauseAllThreads()
-        {
-            foreach (ProcessThread t in debuggedProcess.Threads)
-            {
-                IntPtr hThread = getThreadHandle(t.Id);
-                Win32.SuspendThread(hThread);
-            }
-        }
-
-        private void resumeAllThreads()
-        {
-            foreach (ProcessThread t in debuggedProcess.Threads)
-            {
-                IntPtr hThread = getThreadHandle(t.Id);
-                int result = Win32.ResumeThread(hThread);
-                while (result > 1)
-                {
-                    result = Win32.ResumeThread(hThread);
-                }
-            }
-        }
-
-        public void Continue()
-        {
-            updateContexts();
-
-            bwContinue = new BackgroundWorker();
-            bwContinue.DoWork += bw_Continue;
-
-            mre.Reset();
-            bwContinue.RunWorkerAsync();
-            mre.WaitOne();
-
-            if (AutoClearBP)
-            {
-                clearBreakpoint(lastBreakpoint);
-            }
-        }
-
-        public void Detach()
-        {
-            pauseAllThreads();
-            List<uint> bpAddresses = breakpoints.Keys.ToList();
-            foreach(uint addr in bpAddresses)
-            {
-                clearBreakpoint(addr);
-            }
-            updateContexts();
-            resumeAllThreads();
-        }
-
-        public NIBreakPoint setBreakpoint(uint address)
-        {
-            if (breakpoints.Keys.Contains(address) == false)
-            {
-                NIBreakPoint bp = new NIBreakPoint() { bpAddress = address, originalBytes = getData(address, 2), threadId = 0 };
-                breakpoints.Add(address, bp);
-                setData(address, BREAKPOINT);
-
-                return bp;
-            }
-            return null;
-        }
-
-        public bool clearBreakpoint(NIBreakPoint bp)
-        {
-            return clearBreakpoint(bp.bpAddress);
-        }
-        public bool clearBreakpoint(uint address)
-        {
-            if (breakpoints.Keys.Contains(address))
-            {
-
-                setData(address, breakpoints[address].originalBytes);
-                breakpoints.Remove(address);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        public byte[] getData(uint address, int length)
-        {
-            int numRead = 0;
-            byte[] data = new byte[length];
-            Win32.ReadProcessMemory(debuggedProcessInfo.hProcess, (int)address, data, length, ref numRead);
-
-            if (numRead == length)
-            {
-                return data;
-            }else
-            {
-                return null;
-            }
-        }
-
-        public bool setData(uint address, byte[] data)
-        {
-            Win32.MEMORY_BASIC_INFORMATION mbi = new Win32.MEMORY_BASIC_INFORMATION();
-
-            Win32.VirtualQueryEx(debuggedProcessInfo.hProcess, (int)address, ref mbi, Marshal.SizeOf(mbi));
-            uint oldProtect = 0;
-
-            Win32.VirtualProtectEx((IntPtr)debuggedProcessInfo.hProcess, (IntPtr)mbi.BaseAddress, (UIntPtr)mbi.RegionSize, (uint)Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE, out oldProtect);
-
-            int numWritten = 0;
-            Win32.WriteProcessMemory(debuggedProcessInfo.hProcess, (int)address, data, data.Length, ref numWritten);
-
-            Win32.VirtualProtectEx((IntPtr)debuggedProcessInfo.hProcess, (IntPtr)mbi.BaseAddress, (UIntPtr)mbi.RegionSize, oldProtect, out oldProtect);
-
-            return numWritten == data.Length;
-        }
-
-        public bool writeString(uint address, String str, Encoding encode)
-        {
-            return setData(address, encode.GetBytes(str));
-        }
-
-        public String readString(uint address, int maxLength, Encoding encode)
-        {
-            byte[] data = getData(address, maxLength);
-
-            if (encode.IsSingleByte)
-            {
-                for (int x = 0; x < data.Length - 1; x++)
-                {
-                    if (data[x] == 0)
-                    {
-                        return encode.GetString(data, 0, x + 1);
-                    }
-                }
-            }
-            else
-            {
-                for (int x = 0; x < data.Length - 2; x++)
-                {
-                    if (data[x] + data[x+1] == 0)
-                    {
-                        return encode.GetString(data, 0, x + 1);
-                    }
-                }
-            }
-            return encode.GetString(data);
-        }
-
-        public static void main()
-        {
-            new NIStartupOptions() { executable = "", commandLine = "", resumeOnCreate = true };
-        }
-
-        public uint allocateMemory(uint size)
-        {
-            IntPtr memLocation = Win32.VirtualAllocEx((IntPtr)debuggedProcessInfo.hProcess, new IntPtr(), size, (uint)Win32.StateEnum.MEM_RESERVE | (uint)Win32.StateEnum.MEM_COMMIT, (uint) Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE);
-
-            return (uint)memLocation;
-        }
-
-        private Win32.MODULEENTRY32 getModule(String modName)
-        {
-            IntPtr hSnap = Win32.CreateToolhelp32Snapshot(Win32.SnapshotFlags.NoHeaps | Win32.SnapshotFlags.Module, (uint) debuggedProcessInfo.dwProcessId);
-            Win32.MODULEENTRY32 module = new Win32.MODULEENTRY32();
-            module.dwSize = (uint)Marshal.SizeOf(module);
-            Win32.Module32First(hSnap, ref module);
-
-            if (module.szModule.Equals(modName,StringComparison.CurrentCultureIgnoreCase))
-            {
-                return module;
-            }
-
-            while (Win32.Module32Next(hSnap,ref module))
-            {
-                if (module.szModule.Equals(modName, StringComparison.CurrentCultureIgnoreCase))
-                {
-                    return module;
-                }
-            }
-            module = new Win32.MODULEENTRY32();
-            Win32.CloseHandle(hSnap);
-            return module;
-        }
-
-        public uint getProcAddress (String modName, String method)
-        {
-            Win32.MODULEENTRY32 module = getModule(modName);
-
-            if (module.dwSize == 0)
-            {
-                Console.WriteLine("Failed to find module");
-                throw new Exception("Target doesn't have module: " + modName + " loaded.");
-            }
-            uint modBase = (uint)module.modBaseAddr;
-
-            uint peAddress = getDword(modBase + 0x3c);
-
-            uint exportTableAddress = getDword(modBase + peAddress + 0x78);
-            uint exportTableSize = getDword(modBase + peAddress + 0x7C);
-
-            byte[] exportTable = getData(modBase + exportTableAddress, (int)exportTableSize);
-            uint exportEnd = modBase + exportTableAddress + exportTableSize;
-
-
-            uint numberOfFunctions = BitConverter.ToUInt32(exportTable, 0x14);
-            uint numberOfNames = BitConverter.ToUInt32(exportTable, 0x18);
-
-            uint functionAddressBase = BitConverter.ToUInt32(exportTable, 0x1c);
-            uint nameAddressBase = BitConverter.ToUInt32(exportTable, 0x20);
-            uint ordinalAddressBase = BitConverter.ToUInt32(exportTable, 0x24);
-
-            StringBuilder sb = new StringBuilder();
-            for (int x = 0; x < numberOfNames; x++)
-            {
-                sb.Clear();
-                uint namePtr = BitConverter.ToUInt32(exportTable, (int)(nameAddressBase - exportTableAddress) + (x * 4)) - exportTableAddress;
-                
-                while (exportTable[namePtr] != 0)
-                {
-                    sb.Append((char)exportTable[namePtr]);
-                    namePtr++;
-                }
-
-                ushort funcOrdinal = BitConverter.ToUInt16(exportTable, (int)(ordinalAddressBase - exportTableAddress) + (x * 2));
-
-
-                uint funcAddress = BitConverter.ToUInt32(exportTable, (int)(functionAddressBase - exportTableAddress) + (funcOrdinal * 4));
-                funcAddress += modBase;
-
-                if (sb.ToString().Equals(method))
-                {
-                   return funcAddress;
-                }
-              //  functions.Add(new ExportedFunction(){name = sb.ToString(), address = funcAddress});
-
-            }
-            return 0;
-
-
-        }
-
-        private int getCurrentThreadId()
-        {
-            int thread;
-            // determine the thread
-            if (lastBreakpoint != null)
-            {
-                thread = (int)lastBreakpoint.threadId;
-            }
-            else
-            {
-                thread = debuggedProcessInfo.dwThreadId;
-            }
-            return thread;
-        }
-
-        public uint getInstrLength()
-        {
-            
-            uint address = contexts[getCurrentThreadId()].Eip;
-
-            byte[] data = getData(address, 16);
-            if (breakpoints.ContainsKey(address) == true)
-            {
-                Array.Copy(breakpoints[address].originalBytes, data, 2);
-            }
-
-            return lde.ldasm(data, 0, false).size;
-        }
-
-        public String getInstrOpcodes()
-        {
-            uint address = contexts[getCurrentThreadId()].Eip;
-            byte[] data = getData(address, 16);
-
-            if (breakpoints.ContainsKey(address) == true)
-            {
-                Array.Copy(breakpoints[address].originalBytes, data, 2);
-            }
-
-            uint size = lde.ldasm(data, 0, false).size;
-
-            return BitConverter.ToString(data, 0, (int)size).Replace("-", " ");
-        }
-
-        public void SingleStep(int number)
-        {
-            for (int x = 0; x < number; x++)
-            {
-                SingleStep();
-            }
-        }
-
-        public void SingleStep()
-        {
-            updateContexts();
-            uint address = Context.Eip;
-            byte[] data = getData(address, 16);
-
-            if (breakpoints.ContainsKey(address) == true)
-            {
-                Array.Copy(breakpoints[address].originalBytes, data, 2);
-                clearBreakpoint(breakpoints[address]);
-            }
-
-            ldasm_data ldata = lde.ldasm(data, 0, false);
-
-            uint size = ldata.size;
-            uint nextAddress = Context.Eip + size;
-
-            if (ldata.opcd_size == 1 && (data[ldata.opcd_offset] == 0xEB))
-            {
-                // we have a 1 byte JMP here
-                sbyte offset = (sbyte)data[ldata.imm_offset];
-                nextAddress = (uint)(Context.Eip + offset) + ldata.size;
-            }
-
-            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] == 0xE9) || (data[ldata.opcd_offset] == 0xE8)))
-            {
-                // we have a long JMP or CALL here
-                int offset = BitConverter.ToInt32(data,ldata.imm_offset);
-                if ((data[ldata.opcd_offset] == 0xE9) || (StepIntoCalls && (data[ldata.opcd_offset] == 0xE8)))
-                {
-                    nextAddress = (uint)(Context.Eip + offset) + ldata.size;
-                }
-                
-            }
-
-            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] >= 0x70 && (data[ldata.opcd_offset] <= 0x79)) || (data[ldata.opcd_offset] == 0xE3)))
-            {
-                // we have a 1byte jcc here
-                bool willJump = evalJcc(data[ldata.opcd_offset]);
-
-                if (willJump)
-                {
-                    sbyte offset = (sbyte)data[ldata.imm_offset];
-                    nextAddress = (uint)(Context.Eip + offset) + ldata.size;
-                }
-            }
-
-            if (ldata.opcd_size == 2 && ((data[ldata.opcd_offset] == 0x0F)  || (data[ldata.opcd_offset + 1]== 0x80)))
-            {
-                // we have a 2 byte jcc here
-
-                bool willJump = evalJcc(data[ldata.opcd_offset + 1]);
-
-                if (willJump)
-                {
-                    int offset = BitConverter.ToInt32(data, ldata.imm_offset);
-                    nextAddress = (uint)((Context.Eip + offset) + ldata.size);
-                }
-            }
-
-            if (data[ldata.opcd_offset] == 0xC3 || data[ldata.opcd_offset] == 0xC2)
-            {
-                nextAddress = getStackValue(0);
-            }
-
-            if (data[ldata.opcd_offset] == 0xFF && ldata.opcd_size == 2)
-            {
-                if (data[ldata.opcd_offset + 1] >= 0xD0 && data[ldata.opcd_offset + 1] <= 0xD7 && StepIntoCalls == true)
-                {
-                    // we have a CALL REGISTER
-                    switch (data[ldata.opcd_offset + 1])
-                    {
-                        case 0xD0:
-                            nextAddress = Context.Eax;
-                            break;
-                        case 0xD1:
-                            nextAddress = Context.Ecx;
-                            break;
-                        case 0xD2:
-                            nextAddress = Context.Edx;
-                            break;
-                        case 0xD3:
-                            nextAddress = Context.Ebx;
-                            break;
-                        case 0xD4:
-                            nextAddress = Context.Esp;
-                            break;
-                        case 0xD5:
-                            nextAddress = Context.Ebp;
-                            break;
-                        case 0xD6:
-                            nextAddress = Context.Esi;
-                            break;
-                        case 0xD7:
-                            nextAddress = Context.Edi;
-                            break;
-                    }
-                }
-
-                if (data[ldata.opcd_offset] >= 0xE0 && data[ldata.opcd_offset] <= 0xE7)
-                {
-                    // we have a JMP REGISTER
-                    switch (data[ldata.opcd_offset + 1])
-                    {
-                        case 0xE0:
-                            nextAddress = Context.Eax;
-                            break;
-                        case 0xE1:
-                            nextAddress = Context.Ecx;
-                            break;
-                        case 0xE2:
-                            nextAddress = Context.Edx;
-                            break;
-                        case 0xE3:
-                            nextAddress = Context.Ebx;
-                            break;
-                        case 0xE4:
-                            nextAddress = Context.Esp;
-                            break;
-                        case 0xE5:
-                            nextAddress = Context.Ebp;
-                            break;
-                        case 0xE6:
-                            nextAddress = Context.Esi;
-                            break;
-                        case 0xE7:
-                            nextAddress = Context.Edi;
-                            break;
-                    }
-                }
-            }
-
-            updateContexts();
-            NIBreakPoint stepBP = setBreakpoint(nextAddress);
-            Continue();
-
-            clearBreakpoint(stepBP);
-            
-        }
-
-        private bool evalJcc(byte b)
-        {
-            if ((b & 0x80) == 0x80) { b -= 0x80;}
-            if ((b & 0x70) == 0x70) { b -= 0x70;}
-
-            bool willJump = false;
-            // determine if we will jump
-            switch(b)
-            {
-                case 0:
-                    willJump = Context.GetFlag(ContextFlag.OVERFLOW);
-                    break;
-                case 1:
-                    willJump = !Context.GetFlag(ContextFlag.OVERFLOW);
-                    break;
-                case 2:
-                    willJump = Context.GetFlag(ContextFlag.CARRY);
-                    break;
-                case 3:
-                    willJump = !Context.GetFlag(ContextFlag.CARRY);
-                    break;
-                case 4:
-                    willJump = Context.GetFlag(ContextFlag.ZERO);
-                    break;
-                case 5:
-                    willJump = !Context.GetFlag(ContextFlag.ZERO);
-                    break;
-                case 6:
-                    willJump = Context.GetFlag(ContextFlag.CARRY) || Context.GetFlag(ContextFlag.ZERO);
-                    break;
-                case 7:
-                    willJump = (!Context.GetFlag(ContextFlag.CARRY)) && (!Context.GetFlag(ContextFlag.ZERO));
-                    break;
-                case 8:
-                    willJump = Context.GetFlag(ContextFlag.SIGN);
-                    break;
-                case 9:
-                    willJump = !Context.GetFlag(ContextFlag.SIGN);
-                    break;
-                case 0x0a:
-                    willJump = Context.GetFlag(ContextFlag.PARITY);
-                    break;
-                case 0x0b:
-                    willJump = !Context.GetFlag(ContextFlag.PARITY);
-                    break;
-                case 0x0c:
-                    willJump = Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW);
-                    break;
-                case 0x0d:
-                    willJump = Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW);
-                    break;
-                case 0x0e:
-                    willJump = Context.GetFlag(ContextFlag.ZERO) || (Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW));
-                    break;
-                case 0x0f:
-                    willJump = !Context.GetFlag(ContextFlag.ZERO) && (Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW));
-                    break;
-                case 0xE3:
-                    willJump = Context.Ecx == 0;
-                    break;
-            }
-            return willJump;
-        }
-
-        public uint getDword(uint address)
-        {
-            byte[] data = getData(address, 4);
-            return BitConverter.ToUInt32(data, 0);
-        }
-
-        public void writeDword(uint address, uint value)
-        {
-            byte[] data = BitConverter.GetBytes(value);
-            setData(address, data);
-        }
-
-        public uint getStackValue(uint espOffset)
-        {
-            return getDword(Context.Esp + espOffset);
-        }
-
-        public void setStackValue(uint espOffset, uint value)
-        {
-            writeDword(Context.Esp + espOffset, value);
-        }
-
-    }
-
-    
 
     public class NIStartupOptions
     {
@@ -886,13 +901,6 @@ namespace NonIntrusive
         public byte[] originalBytes {get; set;}
 
         public uint threadId { get; set; }
-    }
-
-    public class NIBreakpPointEventArgs : EventArgs
-    {
-        public uint address { get; set; }
-        public NIBreakPoint breakpoint {get;set;}
-
     }
 
 
