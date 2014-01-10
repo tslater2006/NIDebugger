@@ -304,6 +304,12 @@ namespace NonIntrusive
 
             }
 
+            if (opts.patchTickCount)
+            {
+                byte[] patchData = new byte[] { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
+                WriteData(FindProcAddress("kernel32.dll", "GetTickCount"), patchData);
+            }
+
             return this;
 
         }
@@ -975,6 +981,7 @@ namespace NonIntrusive
         public string commandLine { get; set; }
         public bool resumeOnCreate { get; set; }
 
+        public bool patchTickCount { get; set; }
     }
 
     public class NIBreakPoint
