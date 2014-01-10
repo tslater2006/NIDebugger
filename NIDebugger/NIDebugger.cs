@@ -205,6 +205,45 @@ namespace NonIntrusive
             catch (Exception e) { }
             return this;
         }
+        public NIDebugger InsertHook(uint address, uint destination, out byte[] overwrittenOpcodes)
+        {
+            byte[] data;
+            ReadData(address, 16, out data);
+            uint x = 0;
+            LDASM ldasm = new LDASM();
+            while (x <= 5)
+            {
+                uint curAddress = address + x;
+                if (breakpoints.ContainsKey(curAddress) == true)
+                {
+                    Array.Copy(breakpoints[curAddress].originalBytes,0, data,x, 2);
+                }
+
+                uint curSize = ldasm.ldasm(data, (int)x, false).size;
+                x += curSize;
+            }
+            overwrittenOpcodes = new byte[x];
+            byte[] nopField = new byte[overwrittenOpcodes.Length];
+            for (int y = 0; y < nopField.Length; y++)
+            {
+                nopField[y] = 0x90;
+            }
+
+            WriteData(address,nopField);
+
+            Array.Copy(data, overwrittenOpcodes, x);
+
+            int jumpDistance = (int)destination - (int)address - 5;
+
+            byte[] hookData = new byte[5];
+            hookData[0] = 0xE9;
+
+            Array.Copy(BitConverter.GetBytes(jumpDistance),0,hookData,1,4);
+
+            WriteData(address,hookData);
+
+            return this;
+        }
         public NIDebugger AllocateMemory(uint size, out uint address)
         {
             IntPtr memLocation = Win32.VirtualAllocEx((IntPtr)debuggedProcessInfo.hProcess, new IntPtr(), size, (uint)Win32.StateEnum.MEM_RESERVE | (uint)Win32.StateEnum.MEM_COMMIT, (uint)Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE);
@@ -304,10 +343,26 @@ namespace NonIntrusive
 
             }
 
-            if (opts.patchTickCount)
+            if (opts.patchTickCount && opts.incrementTickCount == false)
             {
                 byte[] patchData = new byte[] { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
                 WriteData(FindProcAddress("kernel32.dll", "GetTickCount"), patchData);
+            } else if (opts.patchTickCount && opts.incrementTickCount)
+            {
+                byte[] patchData = new byte[] { 0x51, 0xB8, 0x01, 0x00, 0x00, 0x00, 0xE8, 0x00, 0x00, 0x00, 0x00, 0x59, 0x83, 0xE9, 0x09, 0xFF, 0x01, 0x59, 0xC3 };
+                uint memoryCave;
+                byte[] opcodes;
+
+                uint hookAddr = FindProcAddress("kernelbase.dll", "GetTickCount");
+                if (hookAddr == 0)
+                {
+                    hookAddr = FindProcAddress("kernel32.dll", "GetTickCount");
+                }
+
+                // work
+                    AllocateMemory(100, out memoryCave);
+                    WriteData(memoryCave, patchData);
+                    InsertHook(hookAddr, memoryCave, out opcodes);
             }
 
             return this;
@@ -982,6 +1037,7 @@ namespace NonIntrusive
         public bool resumeOnCreate { get; set; }
 
         public bool patchTickCount { get; set; }
+        public bool incrementTickCount { get; set; }
     }
 
     public class NIBreakPoint
