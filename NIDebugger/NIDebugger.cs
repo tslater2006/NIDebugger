@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -57,6 +58,81 @@ namespace NonIntrusive
         #region Public Methods
 
         #region Memory Methods
+
+        public NIDebugger GetRegister(NIRegister reg, out uint value)
+        {
+            switch(reg)
+            {
+                case NIRegister.EAX:
+                    value = Context.Eax;
+                    break;
+                case NIRegister.ECX:
+                    value = Context.Ecx;
+                    break;
+                case NIRegister.EDX:
+                    value = Context.Edx;
+                    break;
+                case NIRegister.EBX:
+                    value = Context.Ebx;
+                    break;
+                case NIRegister.ESP:
+                    value = Context.Esp;
+                    break;
+                case NIRegister.EBP:
+                    value = Context.Ebp;
+                    break;
+                case NIRegister.ESI:
+                    value = Context.Esi;
+                    break;
+                case NIRegister.EDI:
+                    value = Context.Edi;
+                    break;
+                case NIRegister.EIP:
+                    value = Context.Eip;
+                    break;
+                default:
+                    value = 0;
+                    break;
+            }
+            return this;
+        }
+        public NIDebugger SetRegister(NIRegister reg, uint value)
+        {
+            switch (reg)
+            {
+                case NIRegister.EAX:
+                    Context.Eax = value;
+                    break;
+                case NIRegister.ECX:
+                    Context.Ecx = value;
+                    break;
+                case NIRegister.EDX:
+                    Context.Edx = value;
+                    break;
+                case NIRegister.EBX:
+                    Context.Ebx = value;
+                    break;
+                case NIRegister.ESP:
+                    Context.Esp = value;
+                    break;
+                case NIRegister.EBP:
+                    Context.Ebp = value;
+                    break;
+                case NIRegister.ESI:
+                    Context.Esi = value;
+                    break;
+                case NIRegister.EDI:
+                    Context.Edi = value;
+                    break;
+                case NIRegister.EIP:
+                    Context.Eip = value;
+                    break;
+                default:
+                    value = 0;
+                    break;
+            }
+            return this;
+        }
         public NIDebugger ReadWORD(uint address, out UInt16 value)
         {
             byte[] data;
@@ -72,6 +148,75 @@ namespace NonIntrusive
 
             output = data;
 
+            return this;
+        }
+        public NIDebugger WriteHexString(uint address, String hexString)
+        {
+            byte[] data = new byte[hexString.Length / 2];
+
+            for (int x = 0; x < hexString.Length; x += 2)
+            {
+                    data[x / 2] = Byte.Parse(hexString.Substring(x, 2), NumberStyles.HexNumber);
+            }
+
+            return WriteData(address, data);
+        }
+        public NIDebugger SearchMemory(NISearchOptions opts , out uint[] results)
+        {
+            
+
+            if (debuggedProcess == null || debuggedProcess.HasExited)
+            {
+                results = null;
+                return this;
+            }
+
+            if (opts.SearchImage)
+            {
+                opts.StartAddress = (uint)debuggedProcess.Modules[0].BaseAddress;
+                opts.EndAddress = opts.StartAddress + (uint)debuggedProcess.Modules[0].ModuleMemorySize;
+            }
+
+            //end &= -4096;
+            Win32.MEMORY_BASIC_INFORMATION mbi = default(Win32.MEMORY_BASIC_INFORMATION);
+            uint i = opts.StartAddress;
+            List<uint> list = new List<uint>();
+            while (i < opts.EndAddress)
+            {
+                Win32.VirtualQueryEx(debuggedProcessInfo.hProcess, (int)i, ref mbi, Marshal.SizeOf(mbi));
+                if (mbi.State == Win32.StateEnum.MEM_RESERVE || mbi.State == Win32.StateEnum.MEM_FREE)
+                {
+                    i += mbi.RegionSize;
+                }
+                else
+                {
+                    byte[] array = new byte[mbi.RegionSize];
+                    ReadData(i, (int)mbi.RegionSize,out array);
+
+                    for (int j = 0; j < array.Length - opts.SearchBytes.Length; j++)
+                    {
+                        if (array[j] == opts.SearchBytes[0] || opts.ByteMask[0] == 1)
+                        {
+                            int num = 1;
+                            while (num < opts.SearchBytes.Length && (array[j + num] == opts.SearchBytes[num] || opts.ByteMask[num] == 1))
+                            {
+                                if (num + 1 == opts.SearchBytes.Length)
+                                {
+                                    list.Add(i + (uint)j);
+                                    if (list.Count == opts.MaxOccurs && opts.MaxOccurs != -1)
+                                    { 
+                                        results = list.ToArray();
+                                        return this;
+                                    }
+                                }
+                                num++;
+                            }
+                        }
+                    }
+                    i += mbi.RegionSize;
+                }
+            }
+            results = list.ToArray();
             return this;
         }
 
@@ -1048,5 +1193,60 @@ namespace NonIntrusive
         public uint threadId { get; set; }
     }
 
+    public class NISearchOptions
+    {
+        public String SearchString
+        {
+            get
+            {
+                return _searchString;
+            }
+            set
+            {
+                _searchString = value.Replace(" ","");
 
+                _searchBytes = new byte[_searchString.Length / 2];
+                _maskBytes = new byte[_searchString.Length / 2];
+
+                for (int x = 0; x < _searchString.Length; x += 2)
+                {
+                    if (_searchString.ElementAt(x) == '?' && _searchString.ElementAt(x + 1) == '?')
+                    {
+                        _maskBytes[x/2] = 1;
+                    }
+                    else
+                    {
+                        _searchBytes[x/2] = Byte.Parse(_searchString.Substring(x, 2), NumberStyles.HexNumber);
+                    }
+                }
+
+            }
+        }
+        private String _searchString;
+        public byte[] SearchBytes { get { return _searchBytes; } }
+        public byte[] ByteMask { get { return _maskBytes; } }
+
+        private byte[] _searchBytes;
+        private byte[] _maskBytes;
+
+
+
+        public uint StartAddress { get; set; }
+        public uint EndAddress { get; set; }
+        public int MaxOccurs { get; set; }
+        public Boolean SearchImage { get; set; }
+    }
+
+    public enum NIRegister
+    {
+        EAX,
+        ECX,
+        EDX,
+        EBX,
+        ESP,
+        EBP,
+        ESI,
+        EDI,
+        EIP
+    }
 }

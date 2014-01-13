@@ -25,11 +25,20 @@ namespace NIDebugger_Test
             opts.executable = @"c:\windows\system32\notepad.exe";
             opts.resumeOnCreate = false;
 
+            NISearchOptions searchOpts = new NISearchOptions();
+            searchOpts.SearchImage = true;
+            searchOpts.SearchString = "50 FF 35 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 8B 8C 24 DC 07 00 00 5F 5E 33 CC E8 ?? ?? ?? ?? 8B E5 5D C3 90 90 90 90 90";
+            searchOpts.MaxOccurs = 1;
+
+            uint[] occurs;
             // work
             debug.Execute(opts)
                 .AllocateMemory(100, out memoryCave)
                 .WriteString(memoryCave, "Welcome To NIDebugger", Encoding.Unicode)
-                .While(IsStillRunning, OverwriteText)
+                .SearchMemory(searchOpts,out occurs)
+                .SetBreakpoint(occurs[0])
+                .Continue()
+                .SetRegister(NIRegister.EAX,memoryCave)
                 .Detach();
         }
 
