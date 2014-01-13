@@ -13,7 +13,7 @@
 
         debugger.StepIntoCalls = False
 
-        Dim dumpOpts As New NonIntrusive.DumpOptions()
+        Dim dumpOpts As New NonIntrusive.NIDumpOptions()
         dumpOpts.ChangeEP = True
         dumpOpts.OutputPath = path + "_dump.exe"
         dumpOpts.PerformDumpFix = True

@@ -59,6 +59,17 @@ namespace NonIntrusive
 
         #region Memory Methods
 
+        public NIDebugger GetFlag(NIContextFlag flag, out bool value)
+        {
+            value = _context.GetFlag(flag);
+            return this;
+        }
+        public NIDebugger SetFlag(NIContextFlag flag, bool value)
+        {
+            _context.SetFlag(flag, value);
+            return this;
+        }
+
         public NIDebugger GetRegister(NIRegister reg, out uint value)
         {
             switch(reg)
@@ -295,7 +306,7 @@ namespace NonIntrusive
         {
             return WriteDWORD(Context.Esp + espOffset, value);
         }
-        public NIDebugger DumpProcess(DumpOptions opts)
+        public NIDebugger DumpProcess(NIDumpOptions opts)
         {
             try
             {
@@ -965,52 +976,52 @@ namespace NonIntrusive
             switch(b)
             {
                 case 0:
-                    willJump = Context.GetFlag(ContextFlag.OVERFLOW);
+                    willJump = Context.GetFlag(NIContextFlag.OVERFLOW);
                     break;
                 case 1:
-                    willJump = !Context.GetFlag(ContextFlag.OVERFLOW);
+                    willJump = !Context.GetFlag(NIContextFlag.OVERFLOW);
                     break;
                 case 2:
-                    willJump = Context.GetFlag(ContextFlag.CARRY);
+                    willJump = Context.GetFlag(NIContextFlag.CARRY);
                     break;
                 case 3:
-                    willJump = !Context.GetFlag(ContextFlag.CARRY);
+                    willJump = !Context.GetFlag(NIContextFlag.CARRY);
                     break;
                 case 4:
-                    willJump = Context.GetFlag(ContextFlag.ZERO);
+                    willJump = Context.GetFlag(NIContextFlag.ZERO);
                     break;
                 case 5:
-                    willJump = !Context.GetFlag(ContextFlag.ZERO);
+                    willJump = !Context.GetFlag(NIContextFlag.ZERO);
                     break;
                 case 6:
-                    willJump = Context.GetFlag(ContextFlag.CARRY) || Context.GetFlag(ContextFlag.ZERO);
+                    willJump = Context.GetFlag(NIContextFlag.CARRY) || Context.GetFlag(NIContextFlag.ZERO);
                     break;
                 case 7:
-                    willJump = (!Context.GetFlag(ContextFlag.CARRY)) && (!Context.GetFlag(ContextFlag.ZERO));
+                    willJump = (!Context.GetFlag(NIContextFlag.CARRY)) && (!Context.GetFlag(NIContextFlag.ZERO));
                     break;
                 case 8:
-                    willJump = Context.GetFlag(ContextFlag.SIGN);
+                    willJump = Context.GetFlag(NIContextFlag.SIGN);
                     break;
                 case 9:
-                    willJump = !Context.GetFlag(ContextFlag.SIGN);
+                    willJump = !Context.GetFlag(NIContextFlag.SIGN);
                     break;
                 case 0x0a:
-                    willJump = Context.GetFlag(ContextFlag.PARITY);
+                    willJump = Context.GetFlag(NIContextFlag.PARITY);
                     break;
                 case 0x0b:
-                    willJump = !Context.GetFlag(ContextFlag.PARITY);
+                    willJump = !Context.GetFlag(NIContextFlag.PARITY);
                     break;
                 case 0x0c:
-                    willJump = Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW);
+                    willJump = Context.GetFlag(NIContextFlag.SIGN) != Context.GetFlag(NIContextFlag.OVERFLOW);
                     break;
                 case 0x0d:
-                    willJump = Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW);
+                    willJump = Context.GetFlag(NIContextFlag.SIGN) == Context.GetFlag(NIContextFlag.OVERFLOW);
                     break;
                 case 0x0e:
-                    willJump = Context.GetFlag(ContextFlag.ZERO) || (Context.GetFlag(ContextFlag.SIGN) != Context.GetFlag(ContextFlag.OVERFLOW));
+                    willJump = Context.GetFlag(NIContextFlag.ZERO) || (Context.GetFlag(NIContextFlag.SIGN) != Context.GetFlag(NIContextFlag.OVERFLOW));
                     break;
                 case 0x0f:
-                    willJump = !Context.GetFlag(ContextFlag.ZERO) && (Context.GetFlag(ContextFlag.SIGN) == Context.GetFlag(ContextFlag.OVERFLOW));
+                    willJump = !Context.GetFlag(NIContextFlag.ZERO) && (Context.GetFlag(NIContextFlag.SIGN) == Context.GetFlag(NIContextFlag.OVERFLOW));
                     break;
                 case 0xE3:
                     willJump = Context.Ecx == 0;
@@ -1023,14 +1034,14 @@ namespace NonIntrusive
 
     }
 
-    public class DumpOptions
+    public class NIDumpOptions
     {
         public bool ChangeEP = false;
         public uint EntryPoint = 0;
         public bool PerformDumpFix = true;
         public String OutputPath = "";
     }
-    public enum ContextFlag : uint
+    public enum NIContextFlag : uint
     {
         CARRY = 0x01,
         PARITY = 0x04,
@@ -1075,12 +1086,12 @@ namespace NonIntrusive
         public byte[] ExtendedRegisters;
 
 
-        public bool GetFlag(ContextFlag i)
+        public bool GetFlag(NIContextFlag i)
         {
             return (this.EFlags & (uint)i) == (uint)i;
         }
 
-        public void SetFlag(ContextFlag i, bool value)
+        public void SetFlag(NIContextFlag i, bool value)
         {
             this.EFlags -= GetFlag(i) ? (uint)i : 0;
 
