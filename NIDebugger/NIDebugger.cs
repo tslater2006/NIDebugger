@@ -31,7 +31,7 @@ namespace NonIntrusive
             get
             {
 
-                return contexts[getCurrentThreadId()];
+                return _context;
             }
         }
 
@@ -41,7 +41,7 @@ namespace NonIntrusive
 
         Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
-        public Dictionary<int, NIContext> contexts = new Dictionary<int, NIContext>();
+        private NIContext _context;
         private static ManualResetEvent mre = new ManualResetEvent(false);
         BackgroundWorker bwContinue;
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
@@ -478,8 +478,9 @@ namespace NonIntrusive
             }
             else
             {
-                getContexts();
-                uint OEP = contexts[debuggedProcessInfo.dwThreadId].Eax;
+                getContext(getCurrentThreadId());
+
+                uint OEP = _context.Eax;
                 SetBreakpoint(OEP);
                 Continue();
                 ClearBreakpoint(OEP);
@@ -517,7 +518,7 @@ namespace NonIntrusive
 
         public NIDebugger Continue()
         {
-            updateContexts();
+            getContext(getCurrentThreadId());
 
             bwContinue = new BackgroundWorker();
             bwContinue.DoWork += bw_Continue;
@@ -547,7 +548,7 @@ namespace NonIntrusive
             {
                 ClearBreakpoint(addr);
             }
-            updateContexts();
+            updateContext(getCurrentThreadId());
             resumeAllThreads();
             return this;
         }
@@ -581,7 +582,7 @@ namespace NonIntrusive
         public uint GetInstrLength()
         {
 
-            uint address = contexts[getCurrentThreadId()].Eip;
+            uint address = _context.Eip;
 
             byte[] data;
             ReadData(address, 16,out data);
@@ -595,7 +596,7 @@ namespace NonIntrusive
 
         public byte[] GetInstrOpcodes()
         {
-            uint address = contexts[getCurrentThreadId()].Eip;
+            uint address = _context.Eip;
             byte[] data;
             ReadData(address, 16, out data);
 
@@ -620,7 +621,7 @@ namespace NonIntrusive
 
         public NIDebugger SingleStep()
         {
-            updateContexts();
+            getContext(getCurrentThreadId());
             uint address = Context.Eip;
             byte[] data;
             ReadData(address, 16, out data);
@@ -751,7 +752,7 @@ namespace NonIntrusive
                 }
             }
 
-            updateContexts();
+            updateContext(getCurrentThreadId());
             SetBreakpoint(nextAddress);
 
             Continue();
@@ -823,35 +824,10 @@ namespace NonIntrusive
 
         #region Private Methods
 
-        private void getContexts()
-        {
-            foreach (ProcessThread currThread in debuggedProcess.Threads)
-            {
-                NIContext ctx = getContext(currThread.Id);
-                if (contexts.ContainsKey(currThread.Id))
-                {
-                    contexts[currThread.Id] = ctx;
-                }
-                else
-                {
-                    contexts.Add(currThread.Id, ctx);
-                }
-            }
-        }
-
-        private void updateContexts()
-        {
-            var keys = contexts.Keys.ToList<int>();
-            for (var x = 0; x < keys.Count; x++ )
-            {
-                updateContext(keys[x]);
-            }
-        }
-
         private void updateContext(int threadId)
         {
             IntPtr hThread = getThreadHandle(threadId);
-            Win32.CONTEXT ctx = contexts[threadId].ToWin32Context();
+            Win32.CONTEXT ctx = _context.ToWin32Context();
             Win32.SetThreadContext(hThread,ref ctx);
         }
 
@@ -863,8 +839,8 @@ namespace NonIntrusive
             Win32.CONTEXT ctx = new Win32.CONTEXT();
             ctx.ContextFlags = (uint)Win32.CONTEXT_FLAGS.CONTEXT_ALL;
             Win32.GetThreadContext(hThread, ref ctx);
-
-            return new NIContext(ctx);
+            _context = new NIContext(ctx);
+            return _context;
 
         }
 
@@ -901,7 +877,7 @@ namespace NonIntrusive
                             lastBreakpoint = breakpoints[address];
                             lastBreakpoint.threadId = (uint)pThread.Id;
 
-                            getContexts();
+                            getContext(pThread.Id);
 
                             e.Cancel = true;
                             mre.Set();
