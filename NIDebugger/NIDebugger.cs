@@ -161,6 +161,10 @@ namespace NonIntrusive
 
             return this;
         }
+        public NIDebugger InjectASM(uint address, String asmString)
+        {
+            return WriteHexString(address,asmString);
+        }
         public NIDebugger WriteHexString(uint address, String hexString)
         {
             byte[] data = new byte[hexString.Length / 2];
@@ -698,6 +702,12 @@ namespace NonIntrusive
 
             if (data[ldata.opcd_offset] == 0xFF && ldata.opcd_size == 1 && ldata.modrm != 0x00)
             {
+                if (ldata.modrm == 0x25)
+                {
+                    // JMP DWORD PTR
+                    uint ptrAddr = BitConverter.ToUInt32(data, ldata.disp_offset);
+                    ReadDWORD(ptrAddr, out nextAddress);
+                }
                 if (ldata.modrm >= 0xD0 && ldata.modrm <= 0xD7 && StepIntoCalls == true)
                 {
                     // we have a CALL REGISTER
@@ -1043,13 +1053,7 @@ namespace NonIntrusive
     }
     public enum NIContextFlag : uint
     {
-        CARRY = 0x01,
-        PARITY = 0x04,
-        ADJUST = 0x10,
-        ZERO = 0x40,
-        SIGN = 0x80,
-        DIRECTION = 0x400,
-        OVERFLOW = 0x800
+        CARRY = 0x01, PARITY = 0x04, ADJUST = 0x10, ZERO = 0x40, SIGN = 0x80, DIRECTION = 0x400, OVERFLOW = 0x800
     }
     public class NIContext
     {
@@ -1226,14 +1230,6 @@ namespace NonIntrusive
 
     public enum NIRegister
     {
-        EAX,
-        ECX,
-        EDX,
-        EBX,
-        ESP,
-        EBP,
-        ESI,
-        EDI,
-        EIP
+        EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI, EIP
     }
 }

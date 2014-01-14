@@ -14,10 +14,24 @@ namespace NIDebugger_Test
         static uint memoryCave;
         static void Main(string[] args)
         {
-            ChangeTitle();
+            MassiveSingleStep();
 
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
+        }
+        static void MassiveSingleStep()
+        {
+            NIStartupOptions opts = new NonIntrusive.NIStartupOptions();
+            opts.executable = @"c:\windows\system32\notepad.exe";
+            opts.resumeOnCreate = false;
+
+            debug.Execute(opts);
+            debug.StepIntoCalls = true;
+            
+            while (debug.Process.HasExited == false)
+            {
+                debug.SingleStep();
+            }
         }
         static void ChangeTitle()
         {
