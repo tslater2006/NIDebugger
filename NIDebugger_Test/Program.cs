@@ -19,6 +19,8 @@ namespace NIDebugger_Test
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
         }
+
+
         static void MassiveSingleStep()
         {
             NIStartupOptions opts = new NonIntrusive.NIStartupOptions();
@@ -26,7 +28,7 @@ namespace NIDebugger_Test
             opts.resumeOnCreate = false;
 
             debug.Execute(opts);
-            debug.StepIntoCalls = true;
+            debug.StepIntoCalls = false;
             
             while (debug.Process.HasExited == false)
             {

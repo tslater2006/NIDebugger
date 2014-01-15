@@ -638,6 +638,10 @@ namespace NonIntrusive
         {
             getContext(getCurrentThreadId());
             uint address = Context.Eip;
+            if (address == 0x77d2a578)
+            {
+                int i = 0;
+            }
             byte[] data;
             ReadData(address, 16, out data);
 
@@ -659,6 +663,39 @@ namespace NonIntrusive
                 nextAddress = (uint)(Context.Eip + offset) + ldata.size;
             }
 
+            if ((data[ldata.opcd_offset] == 0xE2))
+            {
+                // LOOP
+                uint ecx = 0;
+                GetRegister(NIRegister.ECX, out ecx);
+                if (ecx == 1)
+                {
+                    // this instruction will make ECX 0, so we fall thru the jump now
+                    nextAddress = (uint)(Context.Eip + ldata.size);
+
+                }
+                else if (ecx > 1)
+                {
+                    // this instruction will decrement ECX but it wont be 0 yet, so jump!
+                    sbyte disp = (sbyte)data[1];
+                    nextAddress = (uint)(Context.Eip + disp) + ldata.size;
+                }
+
+
+            }
+
+            if ((data[ldata.opcd_offset] == 0xE0))
+            {
+                //LOOPNZ LOOPNE
+                int i = 0;
+            }
+
+            if ((data[ldata.opcd_offset] == 0xE1))
+            {
+                //LOOPNZ LOOPNE
+                int i = 0;
+            }
+
             if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] == 0xE9) || (data[ldata.opcd_offset] == 0xE8)))
             {
                 // we have a long JMP or CALL here
@@ -670,7 +707,7 @@ namespace NonIntrusive
 
             }
 
-            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] >= 0x70 && (data[ldata.opcd_offset] <= 0x79)) || (data[ldata.opcd_offset] == 0xE3)))
+            if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] >= 0x70 && (data[ldata.opcd_offset] <= 0x7F)) || (data[ldata.opcd_offset] == 0xE3)))
             {
                 // we have a 1byte jcc here
                 bool willJump = evalJcc(data[ldata.opcd_offset]);
@@ -702,74 +739,94 @@ namespace NonIntrusive
 
             if (data[ldata.opcd_offset] == 0xFF && ldata.opcd_size == 1 && ldata.modrm != 0x00)
             {
-                if (ldata.modrm == 0x25)
+                // let's parse ModRM!
+                var reg2 = (ldata.modrm & 0x38) >> 3;
+                var mod = (ldata.modrm & 0xC0) >> 6;
+                var reg1 = (ldata.modrm & 0x7);
+                bool addressSet = false;
+                if (reg2 == 2)
                 {
-                    // JMP DWORD PTR
-                    uint ptrAddr = BitConverter.ToUInt32(data, ldata.disp_offset);
-                    ReadDWORD(ptrAddr, out nextAddress);
-                }
-                if (ldata.modrm >= 0xD0 && ldata.modrm <= 0xD7 && StepIntoCalls == true)
-                {
-                    // we have a CALL REGISTER
-                    switch (ldata.modrm)
+                    if (StepIntoCalls == false)
                     {
-                        case 0xD0:
-                            nextAddress = Context.Eax;
-                            break;
-                        case 0xD1:
-                            nextAddress = Context.Ecx;
-                            break;
-                        case 0xD2:
-                            nextAddress = Context.Edx;
-                            break;
-                        case 0xD3:
-                            nextAddress = Context.Ebx;
-                            break;
-                        case 0xD4:
-                            nextAddress = Context.Esp;
-                            break;
-                        case 0xD5:
-                            nextAddress = Context.Ebp;
-                            break;
-                        case 0xD6:
-                            nextAddress = Context.Esi;
-                            break;
-                        case 0xD7:
-                            nextAddress = Context.Edi;
-                            break;
+                        nextAddress = (uint)Context.Eip + ldata.size;
+                        addressSet = true;
                     }
+
+                    Console.Write( "RegOp tells me this is a CALL\r\n");
+                }
+                else if (reg2 == 4)
+                {
+                    Console.Write("RegOp tells me this is a JMP\r\n");
+                }
+                else
+                {
+                    nextAddress = (uint)Context.Eip + ldata.size;
+                    addressSet = true;
                 }
 
-                if (ldata.modrm >= 0xE0 && ldata.modrm <= 0xE7)
+                if (addressSet == false)
                 {
-                    // we have a JMP REGISTER
-                    switch (ldata.modrm)
+                    if (reg1 == 4)
                     {
-                        case 0xE0:
-                            nextAddress = Context.Eax;
-                            break;
-                        case 0xE1:
-                            nextAddress = Context.Ecx;
-                            break;
-                        case 0xE2:
-                            nextAddress = Context.Edx;
-                            break;
-                        case 0xE3:
-                            nextAddress = Context.Ebx;
-                            break;
-                        case 0xE4:
-                            nextAddress = Context.Esp;
-                            break;
-                        case 0xE5:
-                            nextAddress = Context.Ebp;
-                            break;
-                        case 0xE6:
-                            nextAddress = Context.Esi;
-                            break;
-                        case 0xE7:
-                            nextAddress = Context.Edi;
-                            break;
+                        //txtFacts.Text += "Reg1 is a 4 which means there is a SIB byte\r\n";
+                        var ss = (ldata.sib & 0xC0) >> 6;
+                        var index = (ldata.sib & 0x38) >> 3;
+                        var Base = (ldata.sib & 0x07);
+
+
+                        int scale = (int)Math.Pow(2, ss);
+                        nextAddress = (uint)GetRegisterByNumber(index) * (uint)scale;
+                        if (Base == 5)
+                        {
+                            if (mod == 0)
+                            {
+                                nextAddress = (uint)((int)nextAddress + BitConverter.ToInt32(data, ldata.disp_offset));
+                            }
+                            else if (mod == 1)
+                            {
+                                nextAddress += GetRegisterByNumber(Base);
+                                nextAddress = (uint)((int)(nextAddress) + (sbyte)data[ldata.disp_offset]);
+                            }
+                            else if (mod == 2)
+                            {
+                                nextAddress += GetRegisterByNumber(Base);
+                                nextAddress = (uint)((int)nextAddress + BitConverter.ToInt32(data, ldata.disp_offset));
+                            }
+                        }
+
                     }
+                    else
+                    {
+                        if (mod == 0)
+                        {
+                            if (reg1 != 5)
+                            {
+                                nextAddress = GetRegisterByNumber(reg1);     
+                            }
+                            else
+                            {
+                                nextAddress = (uint)BitConverter.ToInt32(data, ldata.disp_offset);
+                            }
+
+                        }
+                        else if (mod == 1)
+                        {
+                            nextAddress = GetRegisterByNumber(reg1);
+                            nextAddress = (uint)((int)(nextAddress) + (sbyte)data[ldata.disp_offset]);
+
+                        }
+                        else if (mod == 2)
+                        {
+                            nextAddress = GetRegisterByNumber(reg1);
+                            nextAddress = (uint)((int)nextAddress + BitConverter.ToInt32(data, ldata.disp_offset));
+                        }
+                    }
+                    if (mod != 3)
+                    {
+                        ReadDWORD(nextAddress, out nextAddress);
+                    }
+                    
+                    Console.WriteLine("Next Address: " + nextAddress.ToString("X8"));
                 }
             }
 
@@ -782,6 +839,31 @@ namespace NonIntrusive
 
             return this;
 
+        }
+
+        private uint GetRegisterByNumber(int val)
+        {
+            switch (val)
+            {
+                case 0:
+                    return Context.Eax;
+                case 1:
+                    return Context.Ecx;
+                case 2:
+                    return Context.Edx;
+                case 3:
+                    return Context.Ebx;
+                case 4:
+                    return 0;
+                case 5:
+                    return Context.Ebp;
+                case 6:
+                    return Context.Esi;
+                case 7:
+                    return Context.Edi;
+                default:
+                    return 0;
+            }
         }
 
         public NIDebugger SetProcBP(String module, String method)
