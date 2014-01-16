@@ -48,12 +48,11 @@
 <h3>
 <a name="why-non-intrusive" class="anchor" href="#why-non-intrusive"><span class="octicon octicon-link"></span></a>Why Non-Intrusive</h3>
 
-<p>The ability to debug a program without being a real debugger has many potential uses. A few of them are listed below:</p>
+<p>Some programs can alter the way they behave based on if they are being debugged or not, in some cases the only way to 'see' what a program is doing is debugging it without the executable detecting that it is being debugged. Non-Intrusive debugging technique prevent this all together (except possible timing checks). </p>
 
-<ul>
-<li>Able to bypass most debugger checks in software (malware)</li>
-<li>Able to debug a process which already has a standard debugger attached to it.</li>
-</ul><h3>
+<p>In a move advanced situation some programs launch as a parent and then spawn another copy of themselves as the child, they then set the parent process up to debug the child one, where the child actually does the work. In this scenario it is impossible to attach a real debugger to the child as Windows only allows a single debugger to debug a process. Non-Intrusive techniques can work well here too!</p>
+
+<h3>
 <a name="documentation" class="anchor" href="#documentation"><span class="octicon octicon-link"></span></a>Documentation</h3>
 
 <p>Documentation for the NIDebugger library can be found <a href="http://tslater2006.github.io/NIDebugger/NIDebugger/VSdoc/">here</a>.</p>
