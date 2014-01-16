@@ -13,11 +13,28 @@ using System.Threading;
 using System.Threading.Tasks;
 namespace NonIntrusive
 {
+    /// <summary>
+    /// The base debugger class. This class is responsible for all debugging actions on an executable.
+    /// </summary>
     public class NIDebugger
     {
         #region Properties
+
+        /// <summary>
+        /// Determines if a BreakPoint should be cleared automatically once it is hit. The default is True
+        /// </summary>
         public bool AutoClearBP = true;
-        public bool StepIntoCalls = true;
+
+        /// <summary>
+        /// Determines if SingleStep should step into a call or over it. The default is False, meaning calls should be stepped over.
+        /// </summary>
+        public bool StepIntoCalls = false;
+        /// <summary>
+        /// Gets the debugged process.
+        /// </summary>
+        /// <value>
+        /// The Process object relating to the process being debugged.
+        /// </value>
         public Process Process
         {
             get
@@ -26,6 +43,13 @@ namespace NonIntrusive
             }
         }
 
+
+        /// <summary>
+        /// Gets the context of the current thread. The current thread is determined by which thread hit the current BreakPoint
+        /// </summary>
+        /// <value>
+        /// NIContext object used to read/write register values.
+        /// </value>
         public NIContext Context
         {
             get
@@ -59,17 +83,35 @@ namespace NonIntrusive
 
         #region Memory Methods
 
+        /// <summary>
+        /// Gets the current value of the requested flag.
+        /// </summary>
+        /// <param name="flag">The flag.</param>
+        /// <param name="value">Output variable that will contain the value of the flag.</param>
+        /// <returns>Reference to the NIDebugger object</returns>
         public NIDebugger GetFlag(NIContextFlag flag, out bool value)
         {
             value = _context.GetFlag(flag);
             return this;
         }
+        /// <summary>
+        /// Sets the value of the requested flag.
+        /// </summary>
+        /// <param name="flag">The flag</param>
+        /// <param name="value">What the new value of the flag should be.</param>
+        /// <returns>Reference to the NIDebugger object</returns>
         public NIDebugger SetFlag(NIContextFlag flag, bool value)
         {
             _context.SetFlag(flag, value);
             return this;
         }
 
+        /// <summary>
+        /// Gets the requested register value from the current context.
+        /// </summary>
+        /// <param name="reg">The register.</param>
+        /// <param name="value">Output variable that will contain the requested value.</param>
+        /// <returns>Reference to the NIDebugger object</returns>
         public NIDebugger GetRegister(NIRegister reg, out uint value)
         {
             switch(reg)
@@ -107,6 +149,12 @@ namespace NonIntrusive
             }
             return this;
         }
+        /// <summary>
+        /// Sets the requested register value for the current context.
+        /// </summary>
+        /// <param name="reg">The register.</param>
+        /// <param name="value">The new register value.</param>
+        /// <returns>Reference to the NIDebugger object</returns>
         public NIDebugger SetRegister(NIRegister reg, uint value)
         {
             switch (reg)
@@ -144,6 +192,12 @@ namespace NonIntrusive
             }
             return this;
         }
+        /// <summary>
+        /// Reads a WORD value from a given address in the debugged process.
+        /// </summary>
+        /// <param name="address">The address to begin reading the WORD</param>
+        /// <param name="value">Output variable that will contain the requested value.</param>
+        /// <returns>Reference to the NIDebugger object</returns>
         public NIDebugger ReadWORD(uint address, out UInt16 value)
         {
             byte[] data;
@@ -151,6 +205,14 @@ namespace NonIntrusive
             value = BitConverter.ToUInt16(data, 0);
             return this;
         }
+
+        /// <summary>
+        /// Reads binary data from the debugged process, starting at a given address and reading a given amount of bytes.
+        /// </summary>
+        /// <param name="address">The address to begin reading.</param>
+        /// <param name="length">The number of bytes to read.</param>
+        /// <param name="output">The output variable that will contain the read data.</param>
+        /// <returns></returns>
         public NIDebugger ReadData(uint address, int length, out byte[] output)
         {
             int numRead = 0;
@@ -161,10 +223,23 @@ namespace NonIntrusive
 
             return this;
         }
+        /// <summary>
+        /// Legacy method that wraps WriteHexString
+        /// </summary>
+        /// <param name="address">The address to begin writing the data.</param>
+        /// <param name="asmString">The hexidecimal string representing the data to be written.</param>
+        /// <returns></returns>
         public NIDebugger InjectASM(uint address, String asmString)
         {
             return WriteHexString(address,asmString);
         }
+
+        /// <summary>
+        /// Parses a hexidecimal string into its equivalent bytes and writes the data to a given address in the debugged process.
+        /// </summary>
+        /// <param name="address">The address to begin writing the data.</param>
+        /// <param name="asmString">The hexidecimal string representing the data to be written.</param>
+        /// <returns></returns>
         public NIDebugger WriteHexString(uint address, String hexString)
         {
             byte[] data = new byte[hexString.Length / 2];
@@ -176,6 +251,13 @@ namespace NonIntrusive
 
             return WriteData(address, data);
         }
+
+        /// <summary>
+        /// Searches the memory space of the debugged process.
+        /// </summary>
+        /// <param name="opts">The SearchOptions to be used to perform the search.</param>
+        /// <param name="results">The output array that will hold addresses where a match was found.</param>
+        /// <returns></returns>
         public NIDebugger SearchMemory(NISearchOptions opts , out uint[] results)
         {
             
@@ -235,6 +317,12 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Writes data to the debugged process at a given address.
+        /// </summary>
+        /// <param name="address">The address to write the data.</param>
+        /// <param name="data">The data to be written.</param>
+        /// <returns></returns>
         public NIDebugger WriteData(uint address, byte[] data)
         {
             Win32.MEMORY_BASIC_INFORMATION mbi = new Win32.MEMORY_BASIC_INFORMATION();
@@ -252,11 +340,26 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Writes a String to a given address in the debugged process, using the specificied string encoding.
+        /// </summary>
+        /// <param name="address">The address to write the String.</param>
+        /// <param name="str">The String to be written.</param>
+        /// <param name="encode">The encoding that should be used for the String.</param>
+        /// <returns></returns>
         public NIDebugger WriteString(uint address, String str, Encoding encode)
         {
             return WriteData(address, encode.GetBytes(str));
         }
 
+        /// <summary>
+        /// Reads a String from a given address in the debugged process, using the specificied string encoding.
+        /// </summary>
+        /// <param name="address">The address to begin reading the String.</param>
+        /// <param name="maxLength">The maximum length of the String to be read.</param>
+        /// <param name="encode">The encoding that the String uses.</param>
+        /// <param name="value">The output variable that will hold the read value.</param>
+        /// <returns></returns>
         public NIDebugger ReadString(uint address, int maxLength, Encoding encode, out String value)
         {
             byte[] data;
@@ -286,6 +389,12 @@ namespace NonIntrusive
             }
             return this;
         }
+        /// <summary>
+        /// Reads a DWORD value from the debugged process at a given address.
+        /// </summary>
+        /// <param name="address">The address to begin reading the DWORD value</param>
+        /// <param name="value">The output variable that will hold the read value.</param>
+        /// <returns></returns>
         public NIDebugger ReadDWORD(uint address, out uint value)
         {
             byte[] data;
@@ -294,22 +403,45 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Writes a DWORD value to the memory of a debugged process.
+        /// </summary>
+        /// <param name="address">The address to begin writing the DWORD value.</param>
+        /// <param name="value">The value to be written.</param>
+        /// <returns></returns>
         public NIDebugger WriteDWORD(uint address, uint value)
         {
             byte[] data = BitConverter.GetBytes(value);
             return WriteData(address, data);
         }
 
+        /// <summary>
+        /// Helper method that simplifies reading a DWORD value from the stack.
+        /// </summary>
+        /// <param name="espOffset">The offset based on ESP to reading.</param>
+        /// <param name="value">The output variable that holds the read value.</param>
+        /// <returns></returns>
         public NIDebugger ReadStackValue(uint espOffset, out uint value)
         {
             ReadDWORD(Context.Esp + espOffset, out value);
             return this;
         }
 
+        /// <summary>
+        /// Helper method that simplifies writing a value to the stack.
+        /// </summary>
+        /// <param name="espOffset">The offset based on ESP to write.</param>
+        /// <param name="value">The value to be written.</param>
+        /// <returns></returns>
         public NIDebugger WriteStackValue(uint espOffset, uint value)
         {
             return WriteDWORD(Context.Esp + espOffset, value);
         }
+        /// <summary>
+        /// Dumps the debugged process from memory to disk.
+        /// </summary>
+        /// <param name="opts">The DumpOptions to be used.</param>
+        /// <returns></returns>
         public NIDebugger DumpProcess(NIDumpOptions opts)
         {
             try
@@ -365,6 +497,13 @@ namespace NonIntrusive
             catch (Exception e) { }
             return this;
         }
+        /// <summary>
+        /// Inserts a JMP instruction at the given address which lands at the given destination.
+        /// </summary>
+        /// <param name="address">The address to place the JMP instruction</param>
+        /// <param name="destination">The destination the JMP should land at.</param>
+        /// <param name="overwrittenOpcodes">The output variable that will contain the overwritten instructions.</param>
+        /// <returns></returns>
         public NIDebugger InsertHook(uint address, uint destination, out byte[] overwrittenOpcodes)
         {
             byte[] data;
@@ -404,6 +543,12 @@ namespace NonIntrusive
 
             return this;
         }
+        /// <summary>
+        /// Allocates memory in the debugged process.
+        /// </summary>
+        /// <param name="size">The number of bytes to allocate.</param>
+        /// <param name="address">The output variable containing the address of the allocated memory.</param>
+        /// <returns></returns>
         public NIDebugger AllocateMemory(uint size, out uint address)
         {
             IntPtr memLocation = Win32.VirtualAllocEx((IntPtr)debuggedProcessInfo.hProcess, new IntPtr(), size, (uint)Win32.StateEnum.MEM_RESERVE | (uint)Win32.StateEnum.MEM_COMMIT, (uint)Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE);
@@ -411,6 +556,15 @@ namespace NonIntrusive
             address = (uint) memLocation;
             return this;
         }
+        /// <summary>
+        /// Finds the address for the given method inside the given module. 
+        /// The method requested must be exported to be found. 
+        /// This is equivalent to the GetProcAddress() Win32 API but takes into account ASLR by reading the export tables directly from the loaded modules within the debugged process.
+        /// </summary>
+        /// <param name="modName">Name of the DLL that contains the function (must include extension)</param>
+        /// <param name="method">The method whose address is being requested.</param>
+        /// <returns>The address of the method if it was found</returns>
+        /// <exception cref="System.Exception">Target doesn't have module:  + modName +  loaded.</exception>
         public uint FindProcAddress(String modName, String method)
         {
             Win32.MODULEENTRY32 module = getModule(modName);
@@ -464,7 +618,6 @@ namespace NonIntrusive
                 {
                     return funcAddress;
                 }
-                //  functions.Add(new ExportedFunction(){name = sb.ToString(), address = funcAddress});
 
             }
             return 0;
@@ -475,6 +628,11 @@ namespace NonIntrusive
 
         #region Control Methods
 
+        /// <summary>
+        /// Begins the debugging process of an executable.
+        /// </summary>
+        /// <param name="opts">The StartupOptions to be used during Execute().</param>
+        /// <returns></returns>
         public NIDebugger Execute(NIStartupOptions opts)
         {
             Win32.SECURITY_ATTRIBUTES sa1 = new Win32.SECURITY_ATTRIBUTES();
@@ -531,6 +689,10 @@ namespace NonIntrusive
         }
 
 
+        /// <summary>
+        /// Signals that the debugged process should be resumed, and that the debugger should continue to monitor for BreakPoint hits.
+        /// </summary>
+        /// <returns></returns>
         public NIDebugger Continue()
         {
             getContext(getCurrentThreadId());
@@ -549,12 +711,20 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Terminates the debugged process.
+        /// </summary>
         public void Terminate()
         {
-            Continue();
+            Detach();
             debuggedProcess.Kill();
         }
 
+        /// <summary>
+        /// Detaches the debugger from the debugged process.
+        /// This is done by removing all registered BreakPoints and then resuming the debugged process.
+        /// </summary>
+        /// <returns></returns>
         public NIDebugger Detach()
         {
             pauseAllThreads();
@@ -568,6 +738,11 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Sets a BreakPoint at a given address in the debugged process.
+        /// </summary>
+        /// <param name="address">The address at which a BreakPoint should be placed.</param>
+        /// <returns></returns>
         public NIDebugger SetBreakpoint(uint address)
         {
             if (breakpoints.Keys.Contains(address) == false)
@@ -582,7 +757,11 @@ namespace NonIntrusive
             }
             return this;
         }
-
+        /// <summary>
+        /// Clears a BreakPoint that has been previously set in the debugged process.
+        /// </summary>
+        /// <param name="address">The address at which the BreakPoint should be removed.</param>
+        /// <returns></returns>
         public NIDebugger ClearBreakpoint(uint address)
         {
             if (breakpoints.Keys.Contains(address))
@@ -594,6 +773,10 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Gets the length of the current instruction. This is based on the current value of EIP.
+        /// </summary>
+        /// <returns>The length (in bytes) of the current instruction.</returns>
         public uint GetInstrLength()
         {
 
@@ -609,6 +792,10 @@ namespace NonIntrusive
             return lde.ldasm(data, 0, false).size;
         }
 
+        /// <summary>
+        /// Gets the opcodes for the current instruction.
+        /// </summary>
+        /// <returns>Byte array consisting of the opcodes for the current instruction.</returns>
         public byte[] GetInstrOpcodes()
         {
             uint address = _context.Eip;
@@ -625,6 +812,11 @@ namespace NonIntrusive
             return data;
         }
 
+        /// <summary>
+        /// Method that performs SingleStep X number of times.
+        /// </summary>
+        /// <param name="number">The number of times SingleStep() should be executed</param>
+        /// <returns></returns>
         public NIDebugger SingleStep(int number)
         {
             for (int x = 0; x < number; x++)
@@ -634,14 +826,16 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Performs a SingleStep operation, that is to stay it resumes the process and pauses at the very next instruction.
+        /// Jumps are followed, conditional jumps are evaluated, Calls are either stepped into or over depending on StepIntoCalls value.
+        /// </summary>
+        /// <returns></returns>
         public NIDebugger SingleStep()
         {
             getContext(getCurrentThreadId());
             uint address = Context.Eip;
-            if (address == 0x77d2a578)
-            {
-                int i = 0;
-            }
+
             byte[] data;
             ReadData(address, 16, out data);
 
@@ -881,12 +1075,24 @@ namespace NonIntrusive
             }
         }
 
+        /// <summary>
+        /// Helper method that simplifies setting a BreakPoint on a function in the debugged process. Usefull only for functions that are exported from their associated modules.
+        /// </summary>
+        /// <param name="module">The module that holds the method.</param>
+        /// <param name="method">The method to set a BreakPoint on.</param>
+        /// <returns></returns>
         public NIDebugger SetProcBP(String module, String method)
         {
             SetBreakpoint(FindProcAddress(module, method));
             return this;
         }
 
+        /// <summary>
+        /// Helper method that simplifies clearing a BreakPoint on a function in the debugged process. Usefull only for functions that are exported from their associated modules.
+        /// </summary>
+        /// <param name="module">The module that holds the method.</param>
+        /// <param name="method">The method to clear a BreakPoint from.</param>
+        /// <returns></returns>
         public NIDebugger ClearProcBP(String module, String method)
         {
             ClearBreakpoint(FindProcAddress(module, method));
@@ -896,6 +1102,12 @@ namespace NonIntrusive
         #endregion
 
         #region Delegate Methods 
+        /// <summary>
+        /// This method continues to run the specifed action while the specified condition results in True
+        /// </summary>
+        /// <param name="condition">Method to be used in determining if Action should be performed, this method MUST return a boolean value.</param>
+        /// <param name="action">The action delegate to be performed while Condition resolves to True</param>
+        /// <returns></returns>
         public NIDebugger While(Func<bool> condition, Action action)
         {
             while (condition())
@@ -906,6 +1118,12 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// This method continues to run the specifed action until the specified condition results in True
+        /// </summary>
+        /// <param name="condition">Method to be used in determining if Action should be performed, this method MUST return a boolean value.</param>
+        /// <param name="action">The action delegate to be performed until Condition resolves to True.</param>
+        /// <returns></returns>
         public NIDebugger Until(Func<bool> condition, Action action)
         {
             while (condition() != true)
@@ -916,6 +1134,12 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// Runs a given Action count number of times.
+        /// </summary>
+        /// <param name="count">The number of times an Action should be run.</param>
+        /// <param name="action">The action to be run.</param>
+        /// <returns></returns>
         public NIDebugger Times(uint count, Action action)
         {
             for (uint x = 0; x < count; x++)
@@ -925,6 +1149,12 @@ namespace NonIntrusive
             return this;
         }
 
+        /// <summary>
+        /// This method runs the given Action if the specified condition results in True
+        /// </summary>
+        /// <param name="condition">Method to be used in determining if Action should be performed, this method MUST return a boolean value.</param>
+        /// <param name="action">The action delegate to be performed if the condition evaluates to True.</param>
+        /// <returns></returns>
         public NIDebugger If(Func<bool> condition, Action action)
         {
             if (condition())
@@ -1141,17 +1371,38 @@ namespace NonIntrusive
 
     }
 
+    /// <summary>
+    /// Class used to specify options used when dumping the debugged process through DumpProcess()
+    /// </summary>
     public class NIDumpOptions
     {
+        /// <summary>
+        /// Determines if the EntryPoint of the debugged process should be changed when dumped.
+        /// </summary>
         public bool ChangeEP = false;
+        /// <summary>
+        /// Only used if ChangeEP == True, this property determines what the new EntryPoint value should be.
+        /// </summary>
         public uint EntryPoint = 0;
+        /// <summary>
+        /// Determines if a DumpFix should be performed on the debugged process.
+        /// </summary>
         public bool PerformDumpFix = true;
+        /// <summary>
+        /// The output path for the dumped executable.
+        /// </summary>
         public String OutputPath = "";
     }
+    /// <summary>
+    /// Enumeration for the various Flags.
+    /// </summary>
     public enum NIContextFlag : uint
     {
         CARRY = 0x01, PARITY = 0x04, ADJUST = 0x10, ZERO = 0x40, SIGN = 0x80, DIRECTION = 0x400, OVERFLOW = 0x800
     }
+    /// <summary>
+    /// Class representing a given thread's Context (registers and flags).
+    /// </summary>
     public class NIContext
     {
         public uint ContextFlags; //set this to an appropriate value 
@@ -1263,26 +1514,89 @@ namespace NonIntrusive
         }
     }
 
+    /// <summary>
+    /// Class used to specify various startup options when calling Execute()
+    /// </summary>
     public class NIStartupOptions
     {
+        /// <summary>
+        /// Gets or sets the path to the executable to be run.
+        /// </summary>
+        /// <value>
+        /// The executable path.
+        /// </value>
         public string executable { get; set; }
+        /// <summary>
+        /// Gets or sets the command line arguments.
+        /// </summary>
+        /// <value>
+        /// The command line arguments.
+        /// </value>
         public string commandLine { get; set; }
+        /// <summary>
+        /// Gets or sets a value indicating whether the debugged process should be resumed immediately after creation, or if it should remain paused until Continue() is called.
+        /// </summary>
+        /// <value>
+        /// If this is set to true, the debugged process will be started immediately after creation, otherwise it is left in a suspended state.
+        /// </value>
         public bool resumeOnCreate { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether the Win32 API call GetTickCount should be patched.
+        /// </summary>
+        /// <value>
+        /// If this is set to true, the call will be patched (how it is patched is determine by the value of incrementTickCount), otherwise the method will be left alone.
+        /// </value>
         public bool patchTickCount { get; set; }
+        /// <summary>
+        /// Gets or sets a value indicating whether GetTickCount should always return 1, or if it should return increasing numbers.
+        /// </summary>
+        /// <value>
+        /// If this is set to true, GetTickCount will return increasing numbers, otherwise it will always return 1.
+        /// </value>
         public bool incrementTickCount { get; set; }
     }
 
+    /// <summary>
+    /// Class representing a BreakPoint that has been placed in the debugged process.
+    /// </summary>
     public class NIBreakPoint
     {
+        /// <summary>
+        /// Gets or sets the address of the BreakPoint.
+        /// </summary>
+        /// <value>
+        /// The address of the BreakPoint.
+        /// </value>
         public uint bpAddress { get; set; }
+        /// <summary>
+        /// Gets or sets the original bytes that were overwritten by the BreakPoint.
+        /// </summary>
+        /// <value>
+        /// The original bytes that were overwritten by the BreakPoint.
+        /// </value>
         public byte[] originalBytes {get; set;}
 
+        /// <summary>
+        /// Gets or sets the thread identifier. This value is populated once a BreakPoint has been hit to show which thread has hit it.
+        /// </summary>
+        /// <value>
+        /// The thread identifier associated with this BreakPoint. This value is only valid in the context of a BreakPoint that has been hit.
+        /// </value>
         public uint threadId { get; set; }
     }
 
+    /// <summary>
+    /// Class used to determine how the method SearchMemory() functions.
+    /// </summary>
     public class NISearchOptions
     {
+        /// <summary>
+        /// Gets or sets the search string.
+        /// </summary>
+        /// <value>
+        /// The search string.
+        /// </value>
         public String SearchString
         {
             get
@@ -1311,7 +1625,19 @@ namespace NonIntrusive
             }
         }
         private String _searchString;
+        /// <summary>
+        /// Gets the search bytes that were parsed from the SearchString.
+        /// </summary>
+        /// <value>
+        /// The search bytes that were parse from the SearchString.
+        /// </value>
         public byte[] SearchBytes { get { return _searchBytes; } }
+        /// <summary>
+        /// Gets the byte mask that was determined from the SearchString.
+        /// </summary>
+        /// <value>
+        /// The byte mask that was determined from the SearchString.
+        /// </value>
         public byte[] ByteMask { get { return _maskBytes; } }
 
         private byte[] _searchBytes;
@@ -1319,12 +1645,40 @@ namespace NonIntrusive
 
 
 
+        /// <summary>
+        /// Gets or sets the start address that the memory searching operation should begin.
+        /// </summary>
+        /// <value>
+        /// The start address to begin searching from.
+        /// </value>
         public uint StartAddress { get; set; }
+        /// <summary>
+        /// Gets or sets the end address that the memory searching operation should end.
+        /// </summary>
+        /// <value>
+        /// The ending address for the memory searching operation.
+        /// </value>
         public uint EndAddress { get; set; }
+        /// <summary>
+        /// Gets or sets the maximum occurences to find before returning from the memory searching operation.
+        /// </summary>
+        /// <value>
+        /// The maximum occurences allowed.
+        /// </value>
         public int MaxOccurs { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the memory range should be limited to the main modules image.
+        /// </summary>
+        /// <value>
+        ///   If this value is set to true, then only the main modules image will be searched, otherwise the search area will be defined by StartAddress and EndAddress.
+        /// </value>
         public Boolean SearchImage { get; set; }
     }
 
+    /// <summary>
+    /// Enumeration used for getting values from a Context.
+    /// </summary>
     public enum NIRegister
     {
         EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI, EIP
