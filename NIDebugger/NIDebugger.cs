@@ -666,15 +666,14 @@ namespace NonIntrusive
             if ((data[ldata.opcd_offset] == 0xE2))
             {
                 // LOOP
-                uint ecx = 0;
-                GetRegister(NIRegister.ECX, out ecx);
-                if (ecx == 1)
+
+                if (Context.Ecx == 1)
                 {
                     // this instruction will make ECX 0, so we fall thru the jump now
                     nextAddress = (uint)(Context.Eip + ldata.size);
 
                 }
-                else if (ecx > 1)
+                else if (Context.Ecx > 1)
                 {
                     // this instruction will decrement ECX but it wont be 0 yet, so jump!
                     sbyte disp = (sbyte)data[1];
@@ -687,13 +686,29 @@ namespace NonIntrusive
             if ((data[ldata.opcd_offset] == 0xE0))
             {
                 //LOOPNZ LOOPNE
-                int i = 0;
+                if (Context.Ecx == 1 && Context.GetFlag(NIContextFlag.ZERO) == false)
+                {
+                    nextAddress = (uint)(Context.Eip + ldata.size);
+                }
+                else if (Context.Ecx > 1 || Context.GetFlag(NIContextFlag.ZERO) != false)
+                {
+                    sbyte disp = (sbyte)data[1];
+                    nextAddress = (uint)(Context.Eip + disp) + ldata.size;
+                }
             }
 
             if ((data[ldata.opcd_offset] == 0xE1))
             {
-                //LOOPNZ LOOPNE
-                int i = 0;
+                //LOOPZ LOOPE
+                if (Context.Ecx == 1 && Context.GetFlag(NIContextFlag.ZERO) == true)
+                {
+                    nextAddress = (uint)(Context.Eip + ldata.size);
+                }
+                else if (Context.Ecx > 1 || Context.GetFlag(NIContextFlag.ZERO) != true)
+                {
+                    sbyte disp = (sbyte)data[1];
+                    nextAddress = (uint)(Context.Eip + disp) + ldata.size;
+                }
             }
 
             if (ldata.opcd_size == 1 && ((data[ldata.opcd_offset] == 0xE9) || (data[ldata.opcd_offset] == 0xE8)))
