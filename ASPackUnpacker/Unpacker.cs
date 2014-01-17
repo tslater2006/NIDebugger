@@ -52,10 +52,10 @@ namespace ASPackUnpacker
             debugger.SearchMemory(searchOpts, out list);
             if (list[0] > 0)
             {
-                myForm.AddLog("Setting BP#1: " + (list[0] - (uint)debugger.Process.MainModule.BaseAddress.ToInt32()).ToString("X8"));
+                myForm.AddLog("Setting BP#1: " + (list[0] - debugger.ProcessImageBase).ToString("X8"));
                 debugger.SetBreakpoint(list[0]).Continue().SingleStep(3);
 
-                uint newOEP = debugger.Context.Eip - (uint)debugger.Process.MainModule.BaseAddress.ToInt32();
+                uint newOEP = debugger.Context.Eip - debugger.ProcessImageBase;
                 dumpOpts.EntryPoint = newOEP;
 
                 debugger.DumpProcess(dumpOpts);
