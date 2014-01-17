@@ -118,7 +118,7 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\NIDebugger\NIDebugger.csproj">
+    <ProjectReference Include="..\NIDebugger\NIDebugger.csproj">
       <Project>{fdb20eb3-5e0e-48df-9364-299c7f9aafc8}</Project>
       <Name>NIDebugger</Name>
     </ProjectReference>
