@@ -14,6 +14,13 @@ namespace NIDebugger_Test
         static uint memoryCave;
         static void Main(string[] args)
         {
+
+            NIStartupOptions opts = new NIStartupOptions();
+            opts.executable = @"C:\Users\Timothy\Documents\Visual Studio 2013\Projects\HelloCPP\x64\Release\HelloCPP.exe";
+            opts.resumeOnCreate = false;
+            debug.Execute(opts);
+
+
             ChangeAllSetText();
 
             Console.WriteLine("Press any key to exit...");

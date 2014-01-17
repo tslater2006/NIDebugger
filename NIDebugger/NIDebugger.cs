@@ -43,6 +43,19 @@ namespace NonIntrusive
             }
         }
 
+        /// <summary>
+        /// Gets the debugged process's ImageBase.
+        /// </summary>
+        /// <value>
+        /// The ImageBase for the debugged process.
+        /// </value>
+        public uint ProcessImageBase
+        {
+            get
+            {
+                return (uint)debuggedProcess.MainModule.BaseAddress;
+            }
+        }
 
         /// <summary>
         /// Gets the context of the current thread. The current thread is determined by which thread hit the current BreakPoint
@@ -624,6 +637,8 @@ namespace NonIntrusive
 
 
         }
+
+
         #endregion
 
         #region Control Methods
