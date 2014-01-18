@@ -823,8 +823,10 @@ namespace NonIntrusive
             }
 
             uint size = lde.ldasm(data, 0, false).size;
+            byte[] codes = new byte[size];
+            Array.Copy(data, codes, size);
 
-            return data;
+            return codes;
         }
 
         /// <summary>
