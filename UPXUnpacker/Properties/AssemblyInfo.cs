@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("ASPackUnpacker")]
+[assembly: AssemblyTitle("UPXUnpacker")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("ASPackUnpacker")]
+[assembly: AssemblyProduct("UPXUnpacker")]
 [assembly: AssemblyCopyright("Copyright © n00bmk 2014")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("26c77779-c5e0-4b5c-ab19-d210f35ce252")]
+[assembly: Guid("d794c584-4cc8-41e6-b950-e6841852c0a1")]
 
 // Version information for an assembly consists of the following four values:
 //
