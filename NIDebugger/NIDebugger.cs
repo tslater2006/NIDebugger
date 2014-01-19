@@ -1046,6 +1046,18 @@ namespace NonIntrusive
                             nextAddress = GetRegisterByNumber(reg1);
                             nextAddress = (uint)((int)nextAddress + BitConverter.ToInt32(data, ldata.disp_offset));
                         }
+                        else if (mod == 3)
+                        {
+                            if (reg1 != 4)
+                            {
+                                nextAddress = GetRegisterByNumber(reg1);
+                            }
+                            else
+                            {
+                                nextAddress = Context.Eip;
+                            }
+                            
+                        }
                     }
                     if (mod != 3)
                     {

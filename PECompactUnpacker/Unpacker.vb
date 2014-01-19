@@ -47,8 +47,18 @@
     End Sub
 
     Public Function FoundJMP()
+        If debugger.Context.Eip > &H405240 Then
+            Dim i As Integer = 0
+        End If
         Dim data() As Byte = debugger.GetInstrOpcodes()
-        Return (data(0) = &HFF And data(1) = &HE0)
+        If (data.Length < 2) Then
+            Return False
+        End If
+        If (data(0) = &HFF And (data(1) = &HE0)) Then
+            Return True
+        Else
+            Return False
+        End If
     End Function
 
 
