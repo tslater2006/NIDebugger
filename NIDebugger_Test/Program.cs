@@ -16,12 +16,22 @@ namespace NIDebugger_Test
         {
 
             NIStartupOptions opts = new NIStartupOptions();
-            opts.executable = @"C:\Users\Timothy\Documents\Visual Studio 2013\Projects\HelloCPP\x64\Release\HelloCPP.exe";
+            //opts.executable = @"c:\windows\system32\notepad.exe";
+            opts.executable = @"C:\Users\Timothy\Documents\Visual Studio 2013\Projects\HelloCPP\Release\HelloCPP.exe";
             opts.resumeOnCreate = false;
             debug.Execute(opts);
 
+            debug.InstallHardVEH();
 
-            ChangeAllSetText();
+            debug.SetHardBreakPoint(0x12212a4, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_EXECUTE, HWBP_SIZE.SIZE_1);
+
+            // hope and pray
+            debug.Continue();
+
+            debug.Detach();
+
+
+            //ChangeAllSetText();
 
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();

@@ -77,18 +77,83 @@ namespace NonIntrusive
         #region Private Variables
 
         Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
+        List<NIHardBreakPoint> hwbps = new List<NIHardBreakPoint>();
+        
+        List<int> hwbpThreadInits = new List<int>();
+
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
         private NIContext _context;
         private static ManualResetEvent mre = new ManualResetEvent(false);
         BackgroundWorker bwContinue;
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
+        // dont need a RET on INSTALL since we wont be calling it, just need 2 bytes to set a BP on
+        byte[] HWBP_VEH_CODE = new byte[] { 0x55, 0x8b, 0xEC, 0x8B, 0x4D, 0x08, 0x8B, 0x01, 0x81, 0x38, 0x04, 0x00, 0x00, 0x80, 0x75, 0x21, 0x8B, 0x40, 0x0C, 0x89, 0x45, 0x08, 0x50, 0x8B, 0x45, 0x08, 0xEB, 0xFE, 0x58, 0x8B, 0x41, 0x04, 0x81, 0x88, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x83, 0xC8, 0xFF, 0x5D, 0xC2, 0x04, 0x00, 0x33, 0xC0, 0x5D, 0xC2, 0x04, 0x00, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x55, 0x8B, 0xEC, 0x68, 0xA0, 0x12, 0x2A, 0x00, 0x6A, 0x01, 0xE8, 0x11, 0xFD, 0x15, 0x00, 0x5D, 0x90, 0x90 };
 
+        // hardcoded for now, this address will be available once we are allocating memory and injecting the VEH code
+
+        // where the codecave is
+        uint HWBP_VEH_ADDR = 0;
+
+        // where the EBFE is in VEH
+        uint HWBP_VEH_BP_OFFSET = 0x1A;
+
+        // where the INSTALL routine starts
+        uint HWBP_VEH_INSTALL_OFFSET = 0x40;
+
+        // ??
+        uint HWBP_VEH_BP_ADDR = 0;
+
+        // where the end of the INSTALL method is, so we can BP there
+        uint HWBP_VEH_INSTALL_END_OFFSET = 0x50;
+
+        // where the Win32 API is
+        uint HWBP_VEH_INSTALL_API_ADDR = 0;
+
+        // where in the INSTALL method we need to change the 4 bytes to point to API
+        uint HWBP_VEH_INSTALL_API_OFFSET = 0x4B;
+
+
+        // fuck so many of these
         NIBreakPoint lastBreakpoint;
 
         Process debuggedProcess;
         LDASM lde = new LDASM();
 
         private byte[] BREAKPOINT = new byte[] { 0xEB, 0xFE };
+
+        // this should really be private but for POC it's fine.
+        public void InstallHardVEH()
+        {
+            if (HWBP_VEH_ADDR == 0)
+            {
+                // only need to inject the code itself once!
+
+                HWBP_VEH_INSTALL_API_ADDR = FindProcAddress("ntdll.dll", "RtlAddVectoredExceptionHandler");
+
+                AllocateMemory((uint)HWBP_VEH_CODE.Length + 2, out HWBP_VEH_ADDR);
+
+                HWBP_VEH_INSTALL_API_ADDR -= (HWBP_VEH_ADDR + (HWBP_VEH_INSTALL_API_OFFSET - 1)) + 0x05;
+                //fck i hate relative jumps story time
+
+                Array.Copy(BitConverter.GetBytes(HWBP_VEH_INSTALL_API_ADDR),0,HWBP_VEH_CODE,HWBP_VEH_INSTALL_API_OFFSET,4);
+                Array.Copy(BitConverter.GetBytes(HWBP_VEH_ADDR), 0, HWBP_VEH_CODE , 0x44, 4);
+                WriteData(HWBP_VEH_ADDR, HWBP_VEH_CODE);
+                HWBP_VEH_BP_ADDR = HWBP_VEH_ADDR + HWBP_VEH_BP_OFFSET;
+            }
+            if (hwbpThreadInits.Contains(getCurrentThreadId()) == false)
+            {
+                // this thread hasn't had the VEH installed...
+                uint originalEIP = _context.Eip;
+                _context.Eip = HWBP_VEH_ADDR + HWBP_VEH_INSTALL_OFFSET;
+                SetBreakpoint(HWBP_VEH_ADDR + HWBP_VEH_INSTALL_END_OFFSET);
+
+                Continue();
+                ClearBreakpoint(HWBP_VEH_ADDR + HWBP_VEH_INSTALL_END_OFFSET);
+
+                _context.Eip = originalEIP;
+            }
+        }
+
 
         #endregion
 
@@ -710,15 +775,17 @@ namespace NonIntrusive
         /// <returns></returns>
         public NIDebugger Continue()
         {
-            getContext(getCurrentThreadId());
+            // dafuq am i getting the context for here?! weird
+            updateContext(getCurrentThreadId());
 
             bwContinue = new BackgroundWorker();
+            
             bwContinue.DoWork += bw_Continue;
 
             mre.Reset();
             bwContinue.RunWorkerAsync();
             mre.WaitOne();
-
+            
             if (AutoClearBP)
             {
                 ClearBreakpoint(lastBreakpoint.bpAddress);
@@ -752,6 +819,26 @@ namespace NonIntrusive
             resumeAllThreads();
             return this;
         }
+
+        public NIDebugger SetHardBreakPoint(uint address, HWBP_MODE mode, HWBP_TYPE type, HWBP_SIZE size)
+        {
+            return SetHardBreakPoint(new NIHardBreakPoint(address, mode, type, size));
+        }
+
+        public NIDebugger SetHardBreakPoint(NIHardBreakPoint hwbp)
+        {
+            if (hwbps.Count == 4)
+            {
+                throw new Exception("Too many HWBPs yo!");
+            }
+
+            hwbps.Add(hwbp);
+
+            
+
+            return this;
+        }
+
 
         /// <summary>
         /// Sets a BreakPoint at a given address in the debugged process.
@@ -850,7 +937,7 @@ namespace NonIntrusive
         /// <returns></returns>
         public NIDebugger SingleStep()
         {
-            getContext(getCurrentThreadId());
+            updateContext(getCurrentThreadId());
             uint address = Context.Eip;
 
             byte[] data;
@@ -1203,6 +1290,96 @@ namespace NonIntrusive
 
         private void updateContext(int threadId)
         {
+            // work out the Debug Registers EVERY TIME WE CALL THIS
+            
+            if (hwbps.Count > 0)
+            {
+                NIHardBreakPoint[] hwbpTempArray = hwbps.ToArray<NIHardBreakPoint>();
+                NIHardBreakPoint[] hwbpArray = new NIHardBreakPoint[4] { null, null, null, null };
+
+                Array.Copy(hwbpTempArray, hwbpArray, hwbpTempArray.Length);
+                _context.Dr0 = 0;
+                _context.Dr1 = 0;
+                _context.Dr2 = 0;
+                _context.Dr3 = 0;
+                _context.Dr7 = 0;
+                uint dr7 = 0;
+                for (int x = 0; x < hwbpArray.Length; x++)
+                {
+                    if (hwbpArray[x] != null)
+                    {
+                        switch (x)
+                        {
+                            case 0:
+                                _context.Dr0 = hwbpArray[x].bpAddress;
+                                break;
+                            case 1:
+                                _context.Dr1 = hwbpArray[x].bpAddress;
+                                break;
+                            case 2:
+                                _context.Dr2 = hwbpArray[x].bpAddress;
+                                break;
+                            case 3:
+                                _context.Dr3 = hwbpArray[x].bpAddress;
+                                break;
+                        }
+                    }
+                }
+
+                // at this point all dr0-dr3 are set as they should be
+                // need to work out dr7 :(
+                
+                //populate the LEN parts
+                for (int x = hwbpArray.Length - 1; x >= 0; x--)
+                {
+
+                    if (hwbpArray[x] != null)
+                    {
+                        dr7 |= (byte)hwbpArray[x].size;
+                        dr7 <<= 2;
+                        dr7 |= (byte)hwbpArray[x].type;
+                        dr7 <<= 2;
+                    }
+                    else
+                    {
+                        dr7 <<= 4;
+                    }
+                }
+                // skip these 5 bits cuz aint nobody care bout them
+                dr7 <<= 5;
+
+                // intel says it's a 1 but it's grey so fck 'em
+                dr7 |= 0;
+                dr7 <<= 1;
+
+                // GE LE not supported so skip!
+                dr7 <<= 2;
+
+                //populate the Global/Local parts
+                for (int x = hwbpArray.Length - 1; x >= 0; x--)
+                {
+
+                    if (hwbpArray[x] != null)
+                    {
+                        dr7 |= (byte)hwbpArray[x].mode;
+                        if (x > 0)
+                        {
+                            dr7 <<= 2;
+                        }
+                    }
+                    else
+                    {
+                        if (x > 0)
+                        {
+                            dr7 <<= 2;
+                        }
+                    }
+                }
+                _context.Dr7 = dr7;
+            }
+
+            
+
             IntPtr hThread = getThreadHandle(threadId);
             Win32.CONTEXT ctx = _context.ToWin32Context();
             Win32.SetThreadContext(hThread,ref ctx);
@@ -1244,10 +1421,26 @@ namespace NonIntrusive
                 }
                 pauseAllThreads();
                 //Console.WriteLine("threads paused");
-                foreach (uint address in breakpoints.Keys)
+                foreach (ProcessThread pThread in debuggedProcess.Threads)
                 {
-                    foreach (ProcessThread pThread in debuggedProcess.Threads)
+                    if (getContext(pThread.Id).Eip == HWBP_VEH_BP_ADDR)
                     {
+                        Console.WriteLine("It seems we've hit a HWBP :P");
+
+                        Console.WriteLine("\t If I had to guess, the BP address was: " + _context.Eax.ToString("X8"));
+                        // fuck this is gonna be messy and i dont wanna do it right now haha
+                        // code goes here for determining which HWBP we hit :)
+
+
+                        getContext(pThread.Id);
+                        _context.Eip += 2;
+                        e.Cancel = true;
+                        mre.Set();
+                        return;
+                    }
+                    foreach (uint address in breakpoints.Keys)
+                    {
+                    
                         if (getContext(pThread.Id).Eip == address)
                         {
                             Console.WriteLine("We hit a breakpoint: " + address.ToString("X"));
@@ -1436,12 +1629,12 @@ namespace NonIntrusive
     {
         public uint ContextFlags; //set this to an appropriate value 
         // Retrieved by CONTEXT_DEBUG_REGISTERS
-        protected uint Dr0;
-        protected uint Dr1;
-        protected uint Dr2;
-        protected uint Dr3;
-        protected uint Dr6;
-        protected uint Dr7;
+        public uint Dr0;
+        public uint Dr1;
+        public uint Dr2;
+        public uint Dr3;
+        public uint Dr6;
+        public uint Dr7;
         // Retrieved by CONTEXT_FLOATING_POINT
         protected Win32.FLOATING_SAVE_AREA FloatSave;
         // Retrieved by CONTEXT_SEGMENTS
@@ -1585,6 +1778,63 @@ namespace NonIntrusive
         /// </value>
         public bool incrementTickCount { get; set; }
     }
+
+    /*enum HWBP_MODE
+{
+    MODE_DISABLED=0, //00
+    MODE_LOCAL=1, //01
+    MODE_GLOBAL=2 //10
+};
+
+enum HWBP_TYPE
+{
+    TYPE_EXECUTE=0, //00
+    TYPE_WRITE=1, //01
+    TYPE_READWRITE=3 //11
+};
+
+enum HWBP_SIZE
+{
+    SIZE_1=0, //00
+    SIZE_2=1, //01
+    SIZE_8=2, //10
+    SIZE_4=3 //11
+};*/
+
+    public enum HWBP_MODE : byte
+    {
+        MODE_DISABLED = 0x00,
+        MODE_LOCAL = 0x01,
+        MODE_GLOBAL = 0x02
+    }
+    public enum HWBP_TYPE : byte
+    {
+        TYPE_EXECUTE = 0x00,
+        TYPE_WRITE = 0x01,
+        TYPE_READWRITE = 0x02
+    }
+
+    public enum HWBP_SIZE : byte
+    {
+        SIZE_1 = 0x00,
+        SIZE_2 = 0x01,
+        SIZE_8 = 0x02,
+        SIZE_4 = 0x03 
+    }
+    public class NIHardBreakPoint : NIBreakPoint
+    {
+        public HWBP_MODE mode;
+        public HWBP_SIZE size;
+        public HWBP_TYPE type;
+        public NIHardBreakPoint(uint address, HWBP_MODE mode, HWBP_TYPE type, HWBP_SIZE size)
+        {
+            this.mode = mode;
+            this.size = size;
+            this.type = type;
+            this.bpAddress = address;
+        }
+    }
+    
 
     /// <summary>
     /// Class representing a BreakPoint that has been placed in the debugged process.
