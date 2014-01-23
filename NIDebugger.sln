@@ -15,8 +15,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ASPackUnpacker", "ASPackUnp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UPXUnpacker", "UPXUnpacker\UPXUnpacker.csproj", "{EB634316-4FD8-4389-A55E-9407F1443D89}"
 EndProject
-Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "Nistune Loader", "Nistune Loader\Nistune Loader.vbproj", "{6409ECDC-FD85-493B-889F-595FA875C81F}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -47,10 +45,6 @@ Global
 		{EB634316-4FD8-4389-A55E-9407F1443D89}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EB634316-4FD8-4389-A55E-9407F1443D89}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EB634316-4FD8-4389-A55E-9407F1443D89}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6409ECDC-FD85-493B-889F-595FA875C81F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6409ECDC-FD85-493B-889F-595FA875C81F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6409ECDC-FD85-493B-889F-595FA875C81F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6409ECDC-FD85-493B-889F-595FA875C81F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
