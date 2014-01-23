@@ -16,18 +16,32 @@ namespace NIDebugger_Test
         {
 
             NIStartupOptions opts = new NIStartupOptions();
-            //opts.executable = @"c:\windows\system32\notepad.exe";
-            opts.executable = @"C:\Users\Timothy\Documents\Visual Studio 2013\Projects\HelloCPP\Release\HelloCPP.exe";
+            opts.executable = @"c:\windows\system32\notepad.exe";
+            //opts.executable = @"C:\Users\Timothy\Documents\Visual Studio 2013\Projects\HelloCPP\Release\HelloCPP.exe";
             opts.resumeOnCreate = false;
             debug.Execute(opts);
 
+            Console.WriteLine("Installing VEH");
             debug.InstallHardVEH();
 
-            debug.SetHardBreakPoint(0x12212a4, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_EXECUTE, HWBP_SIZE.SIZE_1);
+            Console.WriteLine("Setting HWBP on Execute");
+            //debug.SetHardBreakPoint(0xff62a2, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_EXECUTE, HWBP_SIZE.SIZE_1);
+            debug.SetHardBreakPoint(0x700a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
+            debug.SetHardBreakPoint(0x100a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
 
+            Console.WriteLine("Generating Hello World String in Target");
+            uint memoryCave;
+            debug.AllocateMemory(100, out memoryCave);
+
+            debug.WriteString(memoryCave, "Welcome to NIDebugger HWBPs", Encoding.Unicode);
+
+            Console.WriteLine("Running...");
             // hope and pray
             debug.Continue();
+            Console.WriteLine("Setting EAX to new String address");
+            debug.LastBreak.Context.Eax = memoryCave;
 
+            Console.WriteLine("Detaching...");
             debug.Detach();
 
 

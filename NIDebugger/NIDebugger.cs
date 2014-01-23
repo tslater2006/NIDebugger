@@ -13,6 +13,95 @@ using System.Threading;
 using System.Threading.Tasks;
 namespace NonIntrusive
 {
+    public static class NIExtensions
+    {
+        public static bool GetFlag(this Win32.CONTEXT ctx, NIContextFlag i)
+        {
+            return (ctx.EFlags & (uint)i) == (uint)i;
+        }
+
+        public static void SetFlag(this Win32.CONTEXT ctx, NIContextFlag i, bool value)
+        {
+            ctx.EFlags -= GetFlag(ctx,i) ? (uint)i : 0;
+
+            ctx.EFlags ^= (value) ? (uint)i : 0;
+
+        }
+
+        /// <summary>
+        /// Gets the requested register value from the current context.
+        /// </summary>
+        /// <param name="reg">The register.</param>
+        /// <param name="value">Output variable that will contain the requested value.</param>
+        /// <returns>Reference to the NIDebugger object</returns>
+        public static uint GetRegister(this Win32.CONTEXT ctx, NIRegister reg)
+        {
+            switch (reg)
+            {
+                case NIRegister.EAX:
+                    return ctx.Eax;
+                case NIRegister.ECX:
+                    return ctx.Ecx;
+                case NIRegister.EDX:
+                    return ctx.Edx;
+                case NIRegister.EBX:
+                    return ctx.Ebx;
+                case NIRegister.ESP:
+                    return ctx.Esp;
+                case NIRegister.EBP:
+                    return ctx.Ebp;
+                case NIRegister.ESI:
+                    return ctx.Esi;
+                case NIRegister.EDI:
+                    return ctx.Edi;
+                case NIRegister.EIP:
+                    return ctx.Eip;
+                default:
+                    return 0;
+            }
+        }
+        /// <summary>
+        /// Sets the requested register value for the current context.
+        /// </summary>
+        /// <param name="reg">The register.</param>
+        /// <param name="value">The new register value.</param>
+        /// <returns>Reference to the NIDebugger object</returns>
+        public static void SetRegister(this Win32.CONTEXT ctx, NIRegister reg, uint value)
+        {
+            switch (reg)
+            {
+                case NIRegister.EAX:
+                    ctx.Eax = value;
+                    break;
+                case NIRegister.ECX:
+                    ctx.Ecx = value;
+                    break;
+                case NIRegister.EDX:
+                    ctx.Edx = value;
+                    break;
+                case NIRegister.EBX:
+                    ctx.Ebx = value;
+                    break;
+                case NIRegister.ESP:
+                    ctx.Esp = value;
+                    break;
+                case NIRegister.EBP:
+                    ctx.Ebp = value;
+                    break;
+                case NIRegister.ESI:
+                    ctx.Esi = value;
+                    break;
+                case NIRegister.EDI:
+                    ctx.Edi = value;
+                    break;
+                case NIRegister.EIP:
+                    ctx.Eip = value;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
     /// <summary>
     /// The base debugger class. This class is responsible for all debugging actions on an executable.
     /// </summary>
@@ -57,20 +146,7 @@ namespace NonIntrusive
             }
         }
 
-        /// <summary>
-        /// Gets the context of the current thread. The current thread is determined by which thread hit the current BreakPoint
-        /// </summary>
-        /// <value>
-        /// NIContext object used to read/write register values.
-        /// </value>
-        public NIContext Context
-        {
-            get
-            {
 
-                return _context;
-            }
-        }
 
         #endregion
 
@@ -82,39 +158,38 @@ namespace NonIntrusive
         List<int> hwbpThreadInits = new List<int>();
 
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
-        private NIContext _context;
+        public Win32.CONTEXT Context;
         private static ManualResetEvent mre = new ManualResetEvent(false);
         BackgroundWorker bwContinue;
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
         // dont need a RET on INSTALL since we wont be calling it, just need 2 bytes to set a BP on
-        byte[] HWBP_VEH_CODE = new byte[] { 0x55, 0x8b, 0xEC, 0x8B, 0x4D, 0x08, 0x8B, 0x01, 0x81, 0x38, 0x04, 0x00, 0x00, 0x80, 0x75, 0x21, 0x8B, 0x40, 0x0C, 0x89, 0x45, 0x08, 0x50, 0x8B, 0x45, 0x08, 0xEB, 0xFE, 0x58, 0x8B, 0x41, 0x04, 0x81, 0x88, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x83, 0xC8, 0xFF, 0x5D, 0xC2, 0x04, 0x00, 0x33, 0xC0, 0x5D, 0xC2, 0x04, 0x00, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x55, 0x8B, 0xEC, 0x68, 0xA0, 0x12, 0x2A, 0x00, 0x6A, 0x01, 0xE8, 0x11, 0xFD, 0x15, 0x00, 0x5D, 0x90, 0x90 };
-
+        byte[] HWBP_VEH_CODE = new byte[] { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x08, 0x8B, 0x45, 0x08, 0x8B, 0x08, 0x81, 0x39, 0x04, 0x00, 0x00, 0x80, 0x75, 0x44, 0x8B, 0x55, 0x08, 0x8B, 0x02, 0x8B, 0x48, 0x0C, 0x89, 0x4D, 0xFC, 0x8B, 0x55, 0x08, 0x8B, 0x42, 0x04, 0x89, 0x45, 0xF8, 0x50, 0x51, 0x8B, 0x45, 0xFC, 0x8B, 0x4D, 0xF8, 0xEB, 0xFE, 0x59, 0x58, 0x8B, 0x4D, 0x08, 0x8B, 0x51, 0x04, 0x8B, 0x82, 0xC0, 0x00, 0x00, 0x00, 0x0D, 0x00, 0x00, 0x01, 0x00, 0x8B, 0x4D, 0x08, 0x8B, 0x51, 0x04, 0x89, 0x82, 0xC0, 0x00, 0x00, 0x00, 0x83, 0xC8, 0xFF, 0xEB, 0x04, 0xEB, 0x02, 0x33, 0xC0, 0x8B, 0xE5, 0x5D, 0xC2, 0x04, 0x00, 0xCC, 0x55, 0x8B, 0xEC, 0x68, 0x70, 0x16, 0xC2, 0x00, 0x6A, 0x01, 0xE8, 0x21, 0xF9, 0x7D, 0xFF, 0x5D, 0x90, 0x90 };
         // hardcoded for now, this address will be available once we are allocating memory and injecting the VEH code
 
         // where the codecave is
         uint HWBP_VEH_ADDR = 0;
 
-        // where the EBFE is in VEH
-        uint HWBP_VEH_BP_OFFSET = 0x1A;
+        // offset to where the EBFE is in VEH
+        uint HWBP_VEH_BP_OFFSET = 0x2F;
 
         // where the INSTALL routine starts
-        uint HWBP_VEH_INSTALL_OFFSET = 0x40;
+        uint HWBP_VEH_INSTALL_OFFSET = 0x60;
 
-        // ??
+        // Address of the EBFE in VEH
         uint HWBP_VEH_BP_ADDR = 0;
 
         // where the end of the INSTALL method is, so we can BP there
-        uint HWBP_VEH_INSTALL_END_OFFSET = 0x50;
+        uint HWBP_VEH_INSTALL_END_OFFSET = 0x70;
 
         // where the Win32 API is
         uint HWBP_VEH_INSTALL_API_ADDR = 0;
 
         // where in the INSTALL method we need to change the 4 bytes to point to API
-        uint HWBP_VEH_INSTALL_API_OFFSET = 0x4B;
+        uint HWBP_VEH_INSTALL_API_OFFSET = 0x6B;
 
 
         // fuck so many of these
-        NIBreakPoint lastBreakpoint;
+        public NIBreakDetails LastBreak = null;
 
         Process debuggedProcess;
         LDASM lde = new LDASM();
@@ -136,21 +211,21 @@ namespace NonIntrusive
                 //fck i hate relative jumps story time
 
                 Array.Copy(BitConverter.GetBytes(HWBP_VEH_INSTALL_API_ADDR),0,HWBP_VEH_CODE,HWBP_VEH_INSTALL_API_OFFSET,4);
-                Array.Copy(BitConverter.GetBytes(HWBP_VEH_ADDR), 0, HWBP_VEH_CODE , 0x44, 4);
+                Array.Copy(BitConverter.GetBytes(HWBP_VEH_ADDR), 0, HWBP_VEH_CODE , 0x64, 4);
                 WriteData(HWBP_VEH_ADDR, HWBP_VEH_CODE);
                 HWBP_VEH_BP_ADDR = HWBP_VEH_ADDR + HWBP_VEH_BP_OFFSET;
             }
             if (hwbpThreadInits.Contains(getCurrentThreadId()) == false)
             {
                 // this thread hasn't had the VEH installed...
-                uint originalEIP = _context.Eip;
-                _context.Eip = HWBP_VEH_ADDR + HWBP_VEH_INSTALL_OFFSET;
+                uint originalEIP = Context.Eip;
+                Context.Eip = HWBP_VEH_ADDR + HWBP_VEH_INSTALL_OFFSET;
                 SetBreakpoint(HWBP_VEH_ADDR + HWBP_VEH_INSTALL_END_OFFSET);
 
                 Continue();
                 ClearBreakpoint(HWBP_VEH_ADDR + HWBP_VEH_INSTALL_END_OFFSET);
 
-                _context.Eip = originalEIP;
+                Context.Eip = originalEIP;
             }
         }
 
@@ -169,7 +244,7 @@ namespace NonIntrusive
         /// <returns>Reference to the NIDebugger object</returns>
         public NIDebugger GetFlag(NIContextFlag flag, out bool value)
         {
-            value = _context.GetFlag(flag);
+            value = Context.GetFlag(flag);
             return this;
         }
         /// <summary>
@@ -180,96 +255,11 @@ namespace NonIntrusive
         /// <returns>Reference to the NIDebugger object</returns>
         public NIDebugger SetFlag(NIContextFlag flag, bool value)
         {
-            _context.SetFlag(flag, value);
+            Context.SetFlag(flag, value);
             return this;
         }
 
-        /// <summary>
-        /// Gets the requested register value from the current context.
-        /// </summary>
-        /// <param name="reg">The register.</param>
-        /// <param name="value">Output variable that will contain the requested value.</param>
-        /// <returns>Reference to the NIDebugger object</returns>
-        public NIDebugger GetRegister(NIRegister reg, out uint value)
-        {
-            switch(reg)
-            {
-                case NIRegister.EAX:
-                    value = Context.Eax;
-                    break;
-                case NIRegister.ECX:
-                    value = Context.Ecx;
-                    break;
-                case NIRegister.EDX:
-                    value = Context.Edx;
-                    break;
-                case NIRegister.EBX:
-                    value = Context.Ebx;
-                    break;
-                case NIRegister.ESP:
-                    value = Context.Esp;
-                    break;
-                case NIRegister.EBP:
-                    value = Context.Ebp;
-                    break;
-                case NIRegister.ESI:
-                    value = Context.Esi;
-                    break;
-                case NIRegister.EDI:
-                    value = Context.Edi;
-                    break;
-                case NIRegister.EIP:
-                    value = Context.Eip;
-                    break;
-                default:
-                    value = 0;
-                    break;
-            }
-            return this;
-        }
-        /// <summary>
-        /// Sets the requested register value for the current context.
-        /// </summary>
-        /// <param name="reg">The register.</param>
-        /// <param name="value">The new register value.</param>
-        /// <returns>Reference to the NIDebugger object</returns>
-        public NIDebugger SetRegister(NIRegister reg, uint value)
-        {
-            switch (reg)
-            {
-                case NIRegister.EAX:
-                    Context.Eax = value;
-                    break;
-                case NIRegister.ECX:
-                    Context.Ecx = value;
-                    break;
-                case NIRegister.EDX:
-                    Context.Edx = value;
-                    break;
-                case NIRegister.EBX:
-                    Context.Ebx = value;
-                    break;
-                case NIRegister.ESP:
-                    Context.Esp = value;
-                    break;
-                case NIRegister.EBP:
-                    Context.Ebp = value;
-                    break;
-                case NIRegister.ESI:
-                    Context.Esi = value;
-                    break;
-                case NIRegister.EDI:
-                    Context.Edi = value;
-                    break;
-                case NIRegister.EIP:
-                    Context.Eip = value;
-                    break;
-                default:
-                    value = 0;
-                    break;
-            }
-            return this;
-        }
+        
         /// <summary>
         /// Reads a WORD value from a given address in the debugged process.
         /// </summary>
@@ -733,7 +723,7 @@ namespace NonIntrusive
             {
                 getContext(getCurrentThreadId());
 
-                uint OEP = _context.Eax;
+                uint OEP = Context.Eax;
                 SetBreakpoint(OEP);
                 Continue();
                 ClearBreakpoint(OEP);
@@ -777,7 +767,22 @@ namespace NonIntrusive
         {
             // dafuq am i getting the context for here?! weird
             updateContext(getCurrentThreadId());
+            if (LastBreak != null)
+            {
+                if (LastBreak.Event == NIBreakEvent.SINGLE_STEP || LastBreak.Event == NIBreakEvent.HWBP)
+                {
+                    int contextSize = Marshal.SizeOf(LastBreak.Context);
+                    IntPtr memoryPtr = Marshal.AllocHGlobal(contextSize);
+                    Marshal.StructureToPtr(LastBreak.Context, memoryPtr, true);
+                    byte[] contextData = new byte[contextSize];
+                    Marshal.Copy(memoryPtr, contextData, 0, contextSize);
+                    Marshal.FreeHGlobal(memoryPtr);
 
+                    WriteData(LastBreak.ContextAddress, contextData);
+
+                }
+            }
+            
             bwContinue = new BackgroundWorker();
             
             bwContinue.DoWork += bw_Continue;
@@ -788,7 +793,7 @@ namespace NonIntrusive
             
             if (AutoClearBP)
             {
-                ClearBreakpoint(lastBreakpoint.bpAddress);
+                ClearBreakpoint(LastBreak.BreakPoint.bpAddress);
             }
             return this;
         }
@@ -816,6 +821,21 @@ namespace NonIntrusive
                 ClearBreakpoint(addr);
             }
             updateContext(getCurrentThreadId());
+            if (LastBreak != null)
+            {
+                if (LastBreak.Event == NIBreakEvent.SINGLE_STEP || LastBreak.Event == NIBreakEvent.HWBP)
+                {
+                    int contextSize = Marshal.SizeOf(LastBreak.Context);
+                    IntPtr memoryPtr = Marshal.AllocHGlobal(contextSize);
+                    Marshal.StructureToPtr(LastBreak.Context, memoryPtr, true);
+                    byte[] contextData = new byte[contextSize];
+                    Marshal.Copy(memoryPtr, contextData, 0, contextSize);
+                    Marshal.FreeHGlobal(memoryPtr);
+
+                    WriteData(LastBreak.ContextAddress, contextData);
+
+                }
+            }
             resumeAllThreads();
             return this;
         }
@@ -882,7 +902,7 @@ namespace NonIntrusive
         public uint GetInstrLength()
         {
 
-            uint address = _context.Eip;
+            uint address = Context.Eip;
 
             byte[] data;
             ReadData(address, 16,out data);
@@ -900,7 +920,7 @@ namespace NonIntrusive
         /// <returns>Byte array consisting of the opcodes for the current instruction.</returns>
         public byte[] GetInstrOpcodes()
         {
-            uint address = _context.Eip;
+            uint address = Context.Eip;
             byte[] data;
             ReadData(address, 16, out data);
 
@@ -1298,11 +1318,11 @@ namespace NonIntrusive
                 NIHardBreakPoint[] hwbpArray = new NIHardBreakPoint[4] { null, null, null, null };
 
                 Array.Copy(hwbpTempArray, hwbpArray, hwbpTempArray.Length);
-                _context.Dr0 = 0;
-                _context.Dr1 = 0;
-                _context.Dr2 = 0;
-                _context.Dr3 = 0;
-                _context.Dr7 = 0;
+                Context.Dr0 = 0;
+                Context.Dr1 = 0;
+                Context.Dr2 = 0;
+                Context.Dr3 = 0;
+                Context.Dr7 = 0;
                 uint dr7 = 0;
                 for (int x = 0; x < hwbpArray.Length; x++)
                 {
@@ -1311,16 +1331,16 @@ namespace NonIntrusive
                         switch (x)
                         {
                             case 0:
-                                _context.Dr0 = hwbpArray[x].bpAddress;
+                                Context.Dr0 = hwbpArray[x].bpAddress;
                                 break;
                             case 1:
-                                _context.Dr1 = hwbpArray[x].bpAddress;
+                                Context.Dr1 = hwbpArray[x].bpAddress;
                                 break;
                             case 2:
-                                _context.Dr2 = hwbpArray[x].bpAddress;
+                                Context.Dr2 = hwbpArray[x].bpAddress;
                                 break;
                             case 3:
-                                _context.Dr3 = hwbpArray[x].bpAddress;
+                                Context.Dr3 = hwbpArray[x].bpAddress;
                                 break;
                         }
                     }
@@ -1375,17 +1395,16 @@ namespace NonIntrusive
                         }
                     }
                 }
-                _context.Dr7 = dr7;
+                Context.Dr7 = dr7;
             }
 
             
 
             IntPtr hThread = getThreadHandle(threadId);
-            Win32.CONTEXT ctx = _context.ToWin32Context();
-            Win32.SetThreadContext(hThread,ref ctx);
+            Win32.SetThreadContext(hThread,ref Context);
         }
 
-        private NIContext getContext(int threadId)
+        private Win32.CONTEXT getContext(int threadId)
         {
 
             IntPtr hThread = getThreadHandle(threadId);
@@ -1393,8 +1412,8 @@ namespace NonIntrusive
             Win32.CONTEXT ctx = new Win32.CONTEXT();
             ctx.ContextFlags = (uint)Win32.CONTEXT_FLAGS.CONTEXT_ALL;
             Win32.GetThreadContext(hThread, ref ctx);
-            _context = new NIContext(ctx);
-            return _context;
+            Context = ctx;
+            return Context;
 
         }
 
@@ -1427,13 +1446,37 @@ namespace NonIntrusive
                     {
                         Console.WriteLine("It seems we've hit a HWBP :P");
 
-                        Console.WriteLine("\t If I had to guess, the BP address was: " + _context.Eax.ToString("X8"));
-                        // fuck this is gonna be messy and i dont wanna do it right now haha
-                        // code goes here for determining which HWBP we hit :)
+                        Console.WriteLine("\t If I had to guess, the BP address was: " + Context.Eax.ToString("X8"));
 
+                        uint vehContext = Context.Ecx;
+                        int contextSize = Marshal.SizeOf(Context);
 
+                        byte[] contextData = new byte[contextSize];
+
+                        ReadData(vehContext, contextData.Length, out contextData);
+
+                        IntPtr contextPtr = Marshal.AllocHGlobal(contextSize);
+                        Marshal.Copy(contextData, 0, contextPtr, contextSize);
+                        Win32.CONTEXT debugContext = (Win32.CONTEXT)Marshal.PtrToStructure(contextPtr, typeof(Win32.CONTEXT));
+                        Marshal.FreeHGlobal(contextPtr);
+
+                        LastBreak = new NIBreakDetails();
+                        LastBreak.BreakAddress = Context.Eax;
+                        int bpHit = (int)debugContext.Dr6 & 0x0f;
+                        int x = 0;
+                        while (bpHit != 1)
+                        {
+                            x++;
+                            bpHit >>= 1;
+                        }
+
+                        LastBreak.BreakPoint = hwbps[x];
+                        LastBreak.Event = NIBreakEvent.HWBP;
+                        LastBreak.ThreadId = pThread.Id;
+                        LastBreak.Context = debugContext;
+                        LastBreak.ContextAddress = vehContext;
                         getContext(pThread.Id);
-                        _context.Eip += 2;
+                        Context.Eip += 2;
                         e.Cancel = true;
                         mre.Set();
                         return;
@@ -1444,9 +1487,12 @@ namespace NonIntrusive
                         if (getContext(pThread.Id).Eip == address)
                         {
                             Console.WriteLine("We hit a breakpoint: " + address.ToString("X"));
-                            lastBreakpoint = breakpoints[address];
-                            lastBreakpoint.threadId = (uint)pThread.Id;
+                            LastBreak = new NIBreakDetails();
 
+                            LastBreak.BreakAddress = breakpoints[address].bpAddress;
+                            LastBreak.BreakPoint = breakpoints[address];
+                            LastBreak.Event = NIBreakEvent.SWBP;
+                            LastBreak.ThreadId = pThread.Id;
                             getContext(pThread.Id);
 
                             e.Cancel = true;
@@ -1512,9 +1558,9 @@ namespace NonIntrusive
         {
             int thread;
             // determine the thread
-            if (lastBreakpoint != null)
+            if (LastBreak != null)
             {
-                thread = (int)lastBreakpoint.threadId;
+                thread = LastBreak.ThreadId;
             }
             else
             {
@@ -1622,119 +1668,8 @@ namespace NonIntrusive
     {
         CARRY = 0x01, PARITY = 0x04, ADJUST = 0x10, ZERO = 0x40, SIGN = 0x80, DIRECTION = 0x400, OVERFLOW = 0x800
     }
-    /// <summary>
-    /// Class representing a given thread's Context (registers and flags).
-    /// </summary>
-    public class NIContext
-    {
-        public uint ContextFlags; //set this to an appropriate value 
-        // Retrieved by CONTEXT_DEBUG_REGISTERS
-        public uint Dr0;
-        public uint Dr1;
-        public uint Dr2;
-        public uint Dr3;
-        public uint Dr6;
-        public uint Dr7;
-        // Retrieved by CONTEXT_FLOATING_POINT
-        protected Win32.FLOATING_SAVE_AREA FloatSave;
-        // Retrieved by CONTEXT_SEGMENTS
-        protected uint SegGs;
-        protected uint SegFs;
-        protected uint SegEs;
-        protected uint SegDs;
-        // Retrieved by CONTEXT_INTEGER
-        public uint Edi;
-        public uint Esi;
-        public uint Ebx;
-        public uint Edx;
-        public uint Ecx;
-        public uint Eax;
-        // Retrieved by CONTEXT_CONTROL
-        public uint Ebp;
-        public uint Eip;
-        protected uint SegCs;
-        private uint EFlags;
-        public uint Esp;
-        protected uint SegSs;
-        // Retrieved by CONTEXT_EXTENDED_REGISTERS
-        public byte[] ExtendedRegisters;
 
-
-        public bool GetFlag(NIContextFlag i)
-        {
-            return (this.EFlags & (uint)i) == (uint)i;
-        }
-
-        public void SetFlag(NIContextFlag i, bool value)
-        {
-            this.EFlags -= GetFlag(i) ? (uint)i : 0;
-
-            this.EFlags ^= (value) ? (uint)i : 0;
-
-        }
-
-        public Win32.CONTEXT ToWin32Context()
-        {
-            Win32.CONTEXT ctx = new Win32.CONTEXT();
-            ctx.ContextFlags = ContextFlags;
-            ctx.Dr0 = Dr0;
-            ctx.Dr1 = Dr1;
-            ctx.Dr2 = Dr2;
-            ctx.Dr3 = Dr3;
-            ctx.Dr6 = Dr6;
-            ctx.Dr7 = Dr7;
-
-            ctx.FloatSave = FloatSave;
-            ctx.SegGs = SegGs;
-            ctx.SegFs = SegFs;
-            ctx.SegEs = SegEs;
-            ctx.SegDs = SegDs;
-            ctx.Edi = Edi;
-            ctx.Esi = Esi;
-            ctx.Ebx = Ebx;
-            ctx.Edx = Edx;
-            ctx.Ecx = Ecx;
-            ctx.Eax = Eax;
-            ctx.Ebp = Ebp;
-            ctx.Eip = Eip;
-            ctx.SegCs = SegCs;
-            ctx.EFlags = EFlags;
-            ctx.Esp = Esp;
-            ctx.SegSs = SegSs;
-            ctx.ExtendedRegisters = ExtendedRegisters;
-
-            return ctx;
-        }
-
-        public NIContext(Win32.CONTEXT ctx)
-        {
-            ContextFlags = ctx.ContextFlags;
-            Dr0 = ctx.Dr0;
-            Dr1 = ctx.Dr1;
-            Dr2 = ctx.Dr2;
-            Dr3 = ctx.Dr3;
-            Dr6 = ctx.Dr6;
-            Dr7 = ctx.Dr7;
-            FloatSave = ctx.FloatSave;
-            SegGs = ctx.SegGs;
-            SegFs = ctx.SegFs;
-            SegEs = ctx.SegEs;
-            SegDs = ctx.SegDs;
-            Edi = ctx.Edi;
-            Esi = ctx.Esi;
-            Ebx = ctx.Ebx;
-            Edx = ctx.Edx;
-            Ecx = ctx.Ecx;
-            Eax = ctx.Eax;
-            Ebp = ctx.Ebp;
-            Eip = ctx.Eip;
-            SegCs = ctx.SegCs;
-            EFlags = ctx.EFlags;
-            Esp = ctx.Esp;
-            SegSs = ctx.SegSs;
-            ExtendedRegisters = ctx.ExtendedRegisters;
-        }
-    }
+    
 
     /// <summary>
     /// Class used to specify various startup options when calling Execute()
@@ -1779,28 +1714,6 @@ namespace NonIntrusive
         public bool incrementTickCount { get; set; }
     }
 
-    /*enum HWBP_MODE
-{
-    MODE_DISABLED=0, //00
-    MODE_LOCAL=1, //01
-    MODE_GLOBAL=2 //10
-};
-
-enum HWBP_TYPE
-{
-    TYPE_EXECUTE=0, //00
-    TYPE_WRITE=1, //01
-    TYPE_READWRITE=3 //11
-};
-
-enum HWBP_SIZE
-{
-    SIZE_1=0, //00
-    SIZE_2=1, //01
-    SIZE_8=2, //10
-    SIZE_4=3 //11
-};*/
-
     public enum HWBP_MODE : byte
     {
         MODE_DISABLED = 0x00,
@@ -1811,7 +1724,7 @@ enum HWBP_SIZE
     {
         TYPE_EXECUTE = 0x00,
         TYPE_WRITE = 0x01,
-        TYPE_READWRITE = 0x02
+        TYPE_READWRITE = 0x03
     }
 
     public enum HWBP_SIZE : byte
@@ -1961,5 +1874,21 @@ enum HWBP_SIZE
     public enum NIRegister
     {
         EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI, EIP
+    }
+
+    public enum NIBreakEvent
+    {
+        SWBP,HWBP,SINGLE_STEP
+    }
+
+    public class NIBreakDetails
+    {
+        public NIBreakPoint BreakPoint;
+        public NIBreakEvent Event;
+        public uint BreakAddress;
+        public Win32.CONTEXT ctx;
+        public int ThreadId;
+        public Win32.CONTEXT Context;
+        public uint ContextAddress;
     }
 }
