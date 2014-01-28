@@ -37,6 +37,7 @@ Public Class Unpacker
             myVal = BitConverter.ToUInt32(bytess, 0)
 
             '    MsgBox(Hex(myVal))
+            MsgBox(Hex(.Context.Eip))
             .SetHardBreakPoint(.Context.Eip, NonIntrusive.HWBP_MODE.MODE_LOCAL, NonIntrusive.HWBP_TYPE.TYPE_READWRITE, NonIntrusive.HWBP_SIZE.SIZE_4)
             .Continue()
             MsgBox(.LastBreak.Context.Eip.ToString("X8"))
