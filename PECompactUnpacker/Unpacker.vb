@@ -44,7 +44,9 @@ Public Class Unpacker
         'set clipboard OEP/RVA
         Clipboard.SetText(Hex(newEP))
 
-        Dim ImportFixer As New ClsImports
+        Dim ImportFixer As New ImportReconstruction.ARImpRec
+        ImportFixer.Initilize(Application.StartupPath & "\")
+
         If ImportFixer.FixImports(debugger.Process.Id, dumpOpts.OutputPath, newEP + debugger.ProcessImageBase) = True Then
             MsgBox("Successfully unpacked! Saved to: " & Environment.NewLine & ImportFixer.GetSavePath)
         Else
