@@ -17,6 +17,45 @@ IRWarning As IntPtr) As UInteger
     End Function
 
     Private Shared SavedTo As String
+    Sub FixFileAllignment(ByRef TheFile As String)
+        Dim FileArray() As Byte = FileIO.FileSystem.ReadAllBytes(TheFile)
+        Dim AddrToEP As Long = FileArray(59) & FileArray(60)
+        Dim AddrToAllignment As Long = AddrToEP + 59
+        Dim Allignment As String = ""
+        Dim AllignmentVal As Long
+        Dim SectionAlignment As String = ""
+        Dim SectionAlignmentVal As Long
+
+        Dim i As Integer = 4
+        Do Until i = 0
+            Dim tmp As String = Hex(FileArray(AddrToAllignment + i))
+            If tmp.Length = 1 Then tmp = "0" & tmp
+            Allignment = Allignment & tmp
+            i -= 1
+        Loop
+
+        i = 4
+        Do Until i = 0
+            Dim tmp As String = Hex(FileArray((AddrToAllignment - 4) + i))
+            If tmp.Length = 1 Then tmp = "0" & tmp
+            SectionAlignment = SectionAlignment & tmp
+            i -= 1
+        Loop
+        SectionAlignmentVal = SectionAlignment
+        AllignmentVal = Allignment
+        If AllignmentVal < SectionAlignmentVal Then
+            Dim ff() As Char = SectionAlignment
+            i = 1
+            Dim b As Integer = ff.Length - 2
+            Do Until i = 5
+                Dim TmpVar As Long = ff(b) & ff(b + 1)
+                FileArray(AddrToAllignment + i) = "&h" & TmpVar
+                i += 1
+                b -= 2
+            Loop
+            FileIO.FileSystem.WriteAllBytes(TheFile, FileArray, False)
+        End If
+  End Sub
     Sub Initilize(ByVal MyPath As String)
         If FileIO.FileSystem.FileExists(MyPath & "ARImpRec.dll") Then
         Else
@@ -135,5 +174,6 @@ ReCheck:
         FileIO.FileSystem.CopyFile(NewPath, Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe")
         FileIO.FileSystem.DeleteFile(NewPath)
         SavedTo = Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe"
+        FixFileAllignment(SavedTo)
     End Sub
 End Class
