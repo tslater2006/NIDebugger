@@ -2,9 +2,6 @@
 Public Class Unpacker
 
     Dim debugger As New NonIntrusive.NIDebugger()
-
-    
-
     Public Sub UnpackePE(path As String)
         Dim opts As New NonIntrusive.NIStartupOptions()
         opts.executable = path
@@ -48,7 +45,7 @@ Public Class Unpacker
 
         ImportFixer.Initilize(Application.StartupPath & "\")
 
-        If ImportFixer.FixImports(debugger.Process.Id, dumpOpts.OutputPath, newEP + debugger.ProcessImageBase, True) = True Then
+        If ImportFixer.FixImports(debugger.Process.Id, dumpOpts.OutputPath, newEP + debugger.ProcessImageBase, path, True) = True Then
             MsgBox("Successfully unpacked! Saved to: " & Environment.NewLine & ImportFixer.GetSavePath)
         Else
             MsgBox("Import Reconstruction failed, Manually rebuild now!")
@@ -72,6 +69,4 @@ Public Class Unpacker
             Return False
         End If
     End Function
-
-
 End Class

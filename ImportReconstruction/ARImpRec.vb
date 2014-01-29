@@ -19,7 +19,7 @@ IRWarning As IntPtr) As UInteger
     Private Shared SavedTo As String
     Private Sub FixFileAllignment(ByRef TheFile As String)
         Dim FileArray() As Byte = FileIO.FileSystem.ReadAllBytes(TheFile)
-        Dim AddrToEP As Long = FileArray(59) & FileArray(60)
+        Dim AddrToEP As Long = BuildBytes(FileArray(60), FileArray(61), FileArray(62), FileArray(63))
         Dim AddrToAllignment As Long = AddrToEP + 59
         Dim Allignment As String = ""
         Dim AllignmentVal As Long
@@ -65,7 +65,8 @@ IRWarning As IntPtr) As UInteger
     Function GetSavePath()
         Return SavedTo
     End Function
-    Function FixImports(ByVal ProcID As UInteger, ByVal DumpPath As String, ByVal IROEP As UInteger, Optional FixFileAlignment As Boolean = True)
+    Function FixImports(ByVal ProcID As UInteger, ByVal DumpPath As String, ByVal IROEP As UInteger, ByVal OrignalFile As String, Optional FixFileAlignment As Boolean = True)
+        FixHeadderFlags(OrignalFile, DumpPath)
         If SearchAndRebuildImports(ProcID, DumpPath, IROEP) = False Then
             If SearchAndRebuildImportsNoNewSection(ProcID, DumpPath, IROEP) = False Then
                 If SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP) = False Then
@@ -114,13 +115,31 @@ ReCheck:
         End If
         Return True
     End Function
+
+    Function BuildBytes(ByRef Byt1 As Byte, byt2 As Byte, byt3 As Byte, byt4 As Byte)
+        Dim Rebuilt As String = ""
+        Dim Tmp As String = ""
+        Tmp = Hex(byt4)
+        If Tmp.Length = 1 Then Tmp = "0" & Tmp
+        Rebuilt = Tmp
+        Tmp = Hex(byt3)
+        If Tmp.Length = 1 Then Tmp = "0" & Tmp
+        Rebuilt = Rebuilt & Tmp
+        Tmp = Hex(byt2)
+        If Tmp.Length = 1 Then Tmp = "0" & Tmp
+        Rebuilt = Rebuilt & Tmp
+        Tmp = Hex(Byt1)
+        If Tmp.Length = 1 Then Tmp = "0" & Tmp
+        Rebuilt = Rebuilt & Tmp
+        Dim val As Long = "&h" & Rebuilt
+        Return val
+    End Function
     Private Function SearchAndRebuildImports(ByRef ProcID, ByRef DumpPath, ByRef IROEP)
         Dim iatStart As UInt32 = 0
         Dim iatSize As UInt32 = 0
         Dim errorPtr As IntPtr = GetErrorPtr()
-
         Try
-            Dim result As Integer = SearchAndRebuildImports(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
+            Dim result As Integer = SearchAndRebuildImports(ProcID, DumpPath, IROEP, 1, iatStart, iatSize, errorPtr)
             Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
             Marshal.FreeHGlobal(errorPtr)
             Return True
@@ -128,6 +147,30 @@ ReCheck:
             Return False
         End Try
     End Function
+
+    Private Sub FixHeadderFlags(ByRef OrignalFile As String, ByRef DumpFile As String)
+        Dim Orignal() As Byte = FileIO.FileSystem.ReadAllBytes(OrignalFile)
+        Dim Dump() As Byte = FileIO.FileSystem.ReadAllBytes(DumpFile)
+        Dim AddrToEPOG As Long = BuildBytes(Orignal(60), Orignal(61), Orignal(62), Orignal(63))
+        Dim AddrToEPDU As Long = BuildBytes(Dump(60), Dump(61), Dump(62), Dump(63))
+        Dim NumOfSections As Long = Orignal(AddrToEPOG + 7) & Orignal(AddrToEPOG + 6)
+        'MsgBox(Hex(Orignal(AddrToEPOG + 7)))
+        'MsgBox(Orignal(AddrToEPOG + 8))
+        Dim i As Integer = 0
+        Dim Pass As Integer = 1
+        Do Until i = NumOfSections
+            Dim SectionLength As Long = (&H27 * (Pass))
+            If SectionLength > &H27 Then SectionLength = (&H28 * i) + &H27
+            Dim Tmp As Long = AddrToEPOG + &HF8
+            Dim Tmp2 As Long = AddrToEPDU + &HF8
+            Dim SectFlag As Long = Orignal(Tmp + SectionLength)
+            ' MsgBox(Hex(Dump(Tmp2 + SectionLength)))
+            Dump(Tmp2 + SectionLength) = SectFlag
+            Pass += 1
+            i += 1
+        Loop
+        FileIO.FileSystem.WriteAllBytes(DumpFile, Dump, False)
+    End Sub
     Private Function SearchAndRebuildImportsNoNewSection(ByRef ProcID, ByRef DumpPath, ByRef IROEP)
         Dim errorPtr As IntPtr
         Dim iatSize As UInteger

@@ -22,7 +22,7 @@ namespace NonIntrusive
 
         public static void SetFlag(this Win32.CONTEXT ctx, NIContextFlag i, bool value)
         {
-            ctx.EFlags -= GetFlag(ctx,i) ? (uint)i : 0;
+            ctx.EFlags -= GetFlag(ctx, i) ? (uint)i : 0;
 
             ctx.EFlags ^= (value) ? (uint)i : 0;
 
@@ -154,7 +154,7 @@ namespace NonIntrusive
 
         Dictionary<uint, NIBreakPoint> breakpoints = new Dictionary<uint, NIBreakPoint>();
         List<NIHardBreakPoint> hwbps = new List<NIHardBreakPoint>();
-        
+
         List<int> hwbpThreadInits = new List<int>();
 
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
@@ -210,8 +210,8 @@ namespace NonIntrusive
                 HWBP_VEH_INSTALL_API_ADDR -= (HWBP_VEH_ADDR + (HWBP_VEH_INSTALL_API_OFFSET - 1)) + 0x05;
                 //fck i hate relative jumps story time
 
-                Array.Copy(BitConverter.GetBytes(HWBP_VEH_INSTALL_API_ADDR),0,HWBP_VEH_CODE,HWBP_VEH_INSTALL_API_OFFSET,4);
-                Array.Copy(BitConverter.GetBytes(HWBP_VEH_ADDR), 0, HWBP_VEH_CODE , 0x64, 4);
+                Array.Copy(BitConverter.GetBytes(HWBP_VEH_INSTALL_API_ADDR), 0, HWBP_VEH_CODE, HWBP_VEH_INSTALL_API_OFFSET, 4);
+                Array.Copy(BitConverter.GetBytes(HWBP_VEH_ADDR), 0, HWBP_VEH_CODE, 0x64, 4);
                 WriteData(HWBP_VEH_ADDR, HWBP_VEH_CODE);
                 HWBP_VEH_BP_ADDR = HWBP_VEH_ADDR + HWBP_VEH_BP_OFFSET;
             }
@@ -259,7 +259,7 @@ namespace NonIntrusive
             return this;
         }
 
-        
+
         /// <summary>
         /// Reads a WORD value from a given address in the debugged process.
         /// </summary>
@@ -299,7 +299,7 @@ namespace NonIntrusive
         /// <returns></returns>
         public NIDebugger InjectASM(uint address, String asmString)
         {
-            return WriteHexString(address,asmString);
+            return WriteHexString(address, asmString);
         }
 
         /// <summary>
@@ -314,7 +314,7 @@ namespace NonIntrusive
 
             for (int x = 0; x < hexString.Length; x += 2)
             {
-                    data[x / 2] = Byte.Parse(hexString.Substring(x, 2), NumberStyles.HexNumber);
+                data[x / 2] = Byte.Parse(hexString.Substring(x, 2), NumberStyles.HexNumber);
             }
 
             return WriteData(address, data);
@@ -326,9 +326,9 @@ namespace NonIntrusive
         /// <param name="opts">The SearchOptions to be used to perform the search.</param>
         /// <param name="results">The output array that will hold addresses where a match was found.</param>
         /// <returns></returns>
-        public NIDebugger SearchMemory(NISearchOptions opts , out uint[] results)
+        public NIDebugger SearchMemory(NISearchOptions opts, out uint[] results)
         {
-            
+
 
             if (debuggedProcess == null || debuggedProcess.HasExited)
             {
@@ -356,7 +356,7 @@ namespace NonIntrusive
                 else
                 {
                     byte[] array = new byte[mbi.RegionSize];
-                    ReadData(i, (int)mbi.RegionSize,out array);
+                    ReadData(i, (int)mbi.RegionSize, out array);
 
                     for (int j = 0; j < array.Length - opts.SearchBytes.Length; j++)
                     {
@@ -369,7 +369,7 @@ namespace NonIntrusive
                                 {
                                     list.Add(i + (uint)j);
                                     if (list.Count == opts.MaxOccurs && opts.MaxOccurs != -1)
-                                    { 
+                                    {
                                         results = list.ToArray();
                                         return this;
                                     }
@@ -583,7 +583,7 @@ namespace NonIntrusive
                 uint curAddress = address + x;
                 if (breakpoints.ContainsKey(curAddress) == true)
                 {
-                    Array.Copy(breakpoints[curAddress].originalBytes,0, data,x, 2);
+                    Array.Copy(breakpoints[curAddress].originalBytes, 0, data, x, 2);
                 }
 
                 uint curSize = ldasm.ldasm(data, (int)x, false).size;
@@ -596,7 +596,7 @@ namespace NonIntrusive
                 nopField[y] = 0x90;
             }
 
-            WriteData(address,nopField);
+            WriteData(address, nopField);
 
             Array.Copy(data, overwrittenOpcodes, x);
 
@@ -605,9 +605,9 @@ namespace NonIntrusive
             byte[] hookData = new byte[5];
             hookData[0] = 0xE9;
 
-            Array.Copy(BitConverter.GetBytes(jumpDistance),0,hookData,1,4);
+            Array.Copy(BitConverter.GetBytes(jumpDistance), 0, hookData, 1, 4);
 
-            WriteData(address,hookData);
+            WriteData(address, hookData);
 
             return this;
         }
@@ -621,7 +621,7 @@ namespace NonIntrusive
         {
             IntPtr memLocation = Win32.VirtualAllocEx((IntPtr)debuggedProcessInfo.hProcess, new IntPtr(), size, (uint)Win32.StateEnum.MEM_RESERVE | (uint)Win32.StateEnum.MEM_COMMIT, (uint)Win32.AllocationProtectEnum.PAGE_EXECUTE_READWRITE);
 
-            address = (uint) memLocation;
+            address = (uint)memLocation;
             return this;
         }
         /// <summary>
@@ -644,13 +644,13 @@ namespace NonIntrusive
             }
             uint modBase = (uint)module.modBaseAddr;
 
-            uint peAddress,exportTableAddress,exportTableSize;
+            uint peAddress, exportTableAddress, exportTableSize;
             byte[] exportTable;
 
             ReadDWORD(modBase + 0x3c, out peAddress);
 
-            ReadDWORD(modBase + peAddress + 0x78,out exportTableAddress);
-            ReadDWORD(modBase + peAddress + 0x7C,out exportTableSize);
+            ReadDWORD(modBase + peAddress + 0x78, out exportTableAddress);
+            ReadDWORD(modBase + peAddress + 0x7C, out exportTableSize);
 
             ReadData(modBase + exportTableAddress, (int)exportTableSize, out exportTable);
 
@@ -736,7 +736,8 @@ namespace NonIntrusive
             {
                 byte[] patchData = new byte[] { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
                 WriteData(FindProcAddress("kernel32.dll", "GetTickCount"), patchData);
-            } else if (opts.patchTickCount && opts.incrementTickCount)
+            }
+            else if (opts.patchTickCount && opts.incrementTickCount)
             {
                 byte[] patchData = new byte[] { 0x51, 0xB8, 0x01, 0x00, 0x00, 0x00, 0xE8, 0x00, 0x00, 0x00, 0x00, 0x59, 0x83, 0xE9, 0x09, 0xFF, 0x01, 0x59, 0xC3 };
                 uint memoryCave;
@@ -749,9 +750,9 @@ namespace NonIntrusive
                 }
 
                 // work
-                    AllocateMemory(100, out memoryCave);
-                    WriteData(memoryCave, patchData);
-                    InsertHook(hookAddr, memoryCave, out opcodes);
+                AllocateMemory(100, out memoryCave);
+                WriteData(memoryCave, patchData);
+                InsertHook(hookAddr, memoryCave, out opcodes);
             }
 
             return this;
@@ -782,15 +783,15 @@ namespace NonIntrusive
 
                 }
             }
-            
+
             bwContinue = new BackgroundWorker();
-            
+
             bwContinue.DoWork += bw_Continue;
 
             mre.Reset();
             bwContinue.RunWorkerAsync();
             mre.WaitOne();
-            
+
             if (AutoClearBP)
             {
                 ClearBreakpoint(LastBreak.BreakPoint.bpAddress);
@@ -854,7 +855,7 @@ namespace NonIntrusive
 
             hwbps.Add(hwbp);
 
-            
+
 
             return this;
         }
@@ -869,7 +870,7 @@ namespace NonIntrusive
         {
             if (breakpoints.Keys.Contains(address) == false)
             {
-                NIBreakPoint bp = new NIBreakPoint() { bpAddress = address};
+                NIBreakPoint bp = new NIBreakPoint() { bpAddress = address };
                 byte[] origBytes;
                 ReadData(address, 2, out origBytes);
                 bp.originalBytes = origBytes;
@@ -905,7 +906,7 @@ namespace NonIntrusive
             uint address = Context.Eip;
 
             byte[] data;
-            ReadData(address, 16,out data);
+            ReadData(address, 16, out data);
             if (breakpoints.ContainsKey(address) == true)
             {
                 Array.Copy(breakpoints[address].originalBytes, data, 2);
@@ -1085,7 +1086,7 @@ namespace NonIntrusive
                         addressSet = true;
                     }
 
-                    Console.Write( "RegOp tells me this is a CALL\r\n");
+                    Console.Write("RegOp tells me this is a CALL\r\n");
                 }
                 else if (reg2 == 4)
                 {
@@ -1134,7 +1135,7 @@ namespace NonIntrusive
                         {
                             if (reg1 != 5)
                             {
-                                nextAddress = GetRegisterByNumber(reg1);     
+                                nextAddress = GetRegisterByNumber(reg1);
                             }
                             else
                             {
@@ -1163,14 +1164,14 @@ namespace NonIntrusive
                             {
                                 nextAddress = Context.Eip;
                             }
-                            
+
                         }
                     }
                     if (mod != 3)
                     {
                         ReadDWORD(nextAddress, out nextAddress);
                     }
-                    
+
                     Console.WriteLine("Next Address: " + nextAddress.ToString("X8"));
                 }
             }
@@ -1237,7 +1238,7 @@ namespace NonIntrusive
 
         #endregion
 
-        #region Delegate Methods 
+        #region Delegate Methods
         /// <summary>
         /// This method continues to run the specifed action while the specified condition results in True
         /// </summary>
@@ -1311,7 +1312,7 @@ namespace NonIntrusive
         private void updateContext(int threadId)
         {
             // work out the Debug Registers EVERY TIME WE CALL THIS
-            
+
             if (hwbps.Count > 0)
             {
                 NIHardBreakPoint[] hwbpTempArray = hwbps.ToArray<NIHardBreakPoint>();
@@ -1348,7 +1349,7 @@ namespace NonIntrusive
 
                 // at this point all dr0-dr3 are set as they should be
                 // need to work out dr7 :(
-                
+
                 //populate the LEN parts
                 for (int x = hwbpArray.Length - 1; x >= 0; x--)
                 {
@@ -1398,10 +1399,10 @@ namespace NonIntrusive
                 Context.Dr7 = dr7;
             }
 
-            
+
 
             IntPtr hThread = getThreadHandle(threadId);
-            Win32.SetThreadContext(hThread,ref Context);
+            Win32.SetThreadContext(hThread, ref Context);
         }
 
         private Win32.CONTEXT getContext(int threadId)
@@ -1428,11 +1429,11 @@ namespace NonIntrusive
             return handle;
         }
 
-        
+
         private void bw_Continue(object sender, DoWorkEventArgs e)
         {
             BackgroundWorker worker = sender as BackgroundWorker;
-            while (1==1)
+            while (1 == 1)
             {
                 if (debuggedProcess.HasExited)
                 {
@@ -1483,7 +1484,7 @@ namespace NonIntrusive
                     }
                     foreach (uint address in breakpoints.Keys)
                     {
-                    
+
                         if (getContext(pThread.Id).Eip == address)
                         {
                             Console.WriteLine("We hit a breakpoint: " + address.ToString("X"));
@@ -1527,20 +1528,20 @@ namespace NonIntrusive
                 }
             }
         }
-        
+
         private Win32.MODULEENTRY32 getModule(String modName)
         {
-            IntPtr hSnap = Win32.CreateToolhelp32Snapshot(Win32.SnapshotFlags.NoHeaps | Win32.SnapshotFlags.Module, (uint) debuggedProcessInfo.dwProcessId);
+            IntPtr hSnap = Win32.CreateToolhelp32Snapshot(Win32.SnapshotFlags.NoHeaps | Win32.SnapshotFlags.Module, (uint)debuggedProcessInfo.dwProcessId);
             Win32.MODULEENTRY32 module = new Win32.MODULEENTRY32();
             module.dwSize = (uint)Marshal.SizeOf(module);
             Win32.Module32First(hSnap, ref module);
 
-            if (module.szModule.Equals(modName,StringComparison.CurrentCultureIgnoreCase))
+            if (module.szModule.Equals(modName, StringComparison.CurrentCultureIgnoreCase))
             {
                 return module;
             }
 
-            while (Win32.Module32Next(hSnap,ref module))
+            while (Win32.Module32Next(hSnap, ref module))
             {
                 if (module.szModule.Equals(modName, StringComparison.CurrentCultureIgnoreCase))
                 {
@@ -1552,7 +1553,7 @@ namespace NonIntrusive
             return module;
         }
 
-        
+
 
         private int getCurrentThreadId()
         {
@@ -1569,16 +1570,16 @@ namespace NonIntrusive
             return thread;
         }
 
-       
+
 
         private bool evalJcc(byte b)
         {
-            if ((b & 0x80) == 0x80) { b -= 0x80;}
-            if ((b & 0x70) == 0x70) { b -= 0x70;}
+            if ((b & 0x80) == 0x80) { b -= 0x80; }
+            if ((b & 0x70) == 0x70) { b -= 0x70; }
 
             bool willJump = false;
             // determine if we will jump
-            switch(b)
+            switch (b)
             {
                 case 0:
                     willJump = Context.GetFlag(NIContextFlag.OVERFLOW);
@@ -1669,7 +1670,7 @@ namespace NonIntrusive
         CARRY = 0x01, PARITY = 0x04, ADJUST = 0x10, ZERO = 0x40, SIGN = 0x80, DIRECTION = 0x400, OVERFLOW = 0x800
     }
 
-    
+
 
     /// <summary>
     /// Class used to specify various startup options when calling Execute()
@@ -1732,7 +1733,7 @@ namespace NonIntrusive
         SIZE_1 = 0x00,
         SIZE_2 = 0x01,
         SIZE_8 = 0x02,
-        SIZE_4 = 0x03 
+        SIZE_4 = 0x03
     }
     public class NIHardBreakPoint : NIBreakPoint
     {
@@ -1747,7 +1748,7 @@ namespace NonIntrusive
             this.bpAddress = address;
         }
     }
-    
+
 
     /// <summary>
     /// Class representing a BreakPoint that has been placed in the debugged process.
@@ -1767,7 +1768,7 @@ namespace NonIntrusive
         /// <value>
         /// The original bytes that were overwritten by the BreakPoint.
         /// </value>
-        public byte[] originalBytes {get; set;}
+        public byte[] originalBytes { get; set; }
 
         /// <summary>
         /// Gets or sets the thread identifier. This value is populated once a BreakPoint has been hit to show which thread has hit it.
@@ -1797,7 +1798,7 @@ namespace NonIntrusive
             }
             set
             {
-                _searchString = value.Replace(" ","");
+                _searchString = value.Replace(" ", "");
 
                 _searchBytes = new byte[_searchString.Length / 2];
                 _maskBytes = new byte[_searchString.Length / 2];
@@ -1806,11 +1807,11 @@ namespace NonIntrusive
                 {
                     if (_searchString.ElementAt(x) == '?' && _searchString.ElementAt(x + 1) == '?')
                     {
-                        _maskBytes[x/2] = 1;
+                        _maskBytes[x / 2] = 1;
                     }
                     else
                     {
-                        _searchBytes[x/2] = Byte.Parse(_searchString.Substring(x, 2), NumberStyles.HexNumber);
+                        _searchBytes[x / 2] = Byte.Parse(_searchString.Substring(x, 2), NumberStyles.HexNumber);
                     }
                 }
 
@@ -1878,7 +1879,7 @@ namespace NonIntrusive
 
     public enum NIBreakEvent
     {
-        SWBP,HWBP,SINGLE_STEP
+        SWBP, HWBP, SINGLE_STEP
     }
 
     public class NIBreakDetails
