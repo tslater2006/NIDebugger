@@ -42,7 +42,6 @@ Public Class Unpacker
         Clipboard.SetText(Hex(newEP))
 
         Dim ImportFixer As New ImportReconstruction.ARImpRec
-
         ImportFixer.Initilize(Application.StartupPath & "\")
 
         If ImportFixer.FixImports(debugger.Process.Id, dumpOpts.OutputPath, newEP + debugger.ProcessImageBase, path, True) = True Then

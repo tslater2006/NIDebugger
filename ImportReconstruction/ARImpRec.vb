@@ -115,8 +115,7 @@ ReCheck:
         End If
         Return True
     End Function
-
-    Function BuildBytes(ByRef Byt1 As Byte, byt2 As Byte, byt3 As Byte, byt4 As Byte)
+    Private Function BuildBytes(ByRef Byt1 As Byte, byt2 As Byte, byt3 As Byte, byt4 As Byte)
         Dim Rebuilt As String = ""
         Dim Tmp As String = ""
         Tmp = Hex(byt4)
@@ -147,7 +146,6 @@ ReCheck:
             Return False
         End Try
     End Function
-
     Private Sub FixHeadderFlags(ByRef OrignalFile As String, ByRef DumpFile As String)
         Dim Orignal() As Byte = FileIO.FileSystem.ReadAllBytes(OrignalFile)
         Dim Dump() As Byte = FileIO.FileSystem.ReadAllBytes(DumpFile)
@@ -209,14 +207,15 @@ ReCheck:
         Return True
     End Function
     Private Sub CleanupFiles(ByVal NewPath As String, ByRef FixAlignment As Boolean)
+        Dim Unpacked As String = Replace(NewPath, "dump_", "unpacked")
         Try
-            FileIO.FileSystem.DeleteFile(Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe")
+            FileIO.FileSystem.DeleteFile(Unpacked)
         Catch ex As Exception
         End Try
 
-        FileIO.FileSystem.CopyFile(NewPath, Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe")
+        FileIO.FileSystem.CopyFile(NewPath, Unpacked)
         FileIO.FileSystem.DeleteFile(NewPath)
-        SavedTo = Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe"
+        SavedTo = Unpacked
         If FixAlignment = True Then FixFileAllignment(SavedTo)
     End Sub
 End Class
