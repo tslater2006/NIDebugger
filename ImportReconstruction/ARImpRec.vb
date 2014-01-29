@@ -16,53 +16,24 @@ IRWarning As IntPtr) As UInteger
 IRWarning As IntPtr) As UInteger
     End Function
 
-    Public Shared SavedTo As String
-
+    Private Shared SavedTo As String
     Sub Initilize(ByVal MyPath As String)
         If FileIO.FileSystem.FileExists(MyPath & "ARImpRec.dll") Then
         Else
             FileIO.FileSystem.WriteAllBytes(MyPath & "ARImpRec.dll", My.Resources.ARImpRec, False)
         End If
     End Sub
-
     Function GetSavePath()
         Return SavedTo
     End Function
-
     Function FixImports(ByVal ProcID, ByVal DumpPath, ByVal IROEP)
-        Dim iatStart As UInt32 = 0
-        Dim iatSize As UInt32 = 0
-
-        Dim errorPtr As IntPtr = Marshal.AllocHGlobal(1000)
-
-
-        Try
-            ' Dim IROEP As UInteger = newEP + Debugger.ProcessImageBase
-            Dim result As Integer = SearchAndRebuildImports(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
-            Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
-            Marshal.FreeHGlobal(errorPtr)
-        Catch ex As Exception
-            Try
-                iatSize = 0
-                iatStart = 0
-                errorPtr = Marshal.AllocHGlobal(1000)
-                Dim result As Integer = SearchAndRebuildImportsNoNewSection(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
-                Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
-                Marshal.FreeHGlobal(errorPtr)
-            Catch exx As Exception
-                Try
-                    iatSize = 0
-                    iatStart = 0
-                    errorPtr = Marshal.AllocHGlobal(1000)
-                    Dim result As Integer = SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
-                    Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
-                    Marshal.FreeHGlobal(errorPtr)
-                Catch exxx As Exception
+        If SearchAndRebuildImports(ProcID, DumpPath, IROEP) = False Then
+            If SearchAndRebuildImportsNoNewSection(ProcID, DumpPath, IROEP) = False Then
+                If SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP) = False Then
                     Return False
-                End Try
-            End Try
-            Return False
-        End Try
+                End If
+            End If
+        End If
 
         Dim Npath As String = Strings.Left(DumpPath, DumpPath.Length - 4) & "_.exe"
         Dim ReCheckCount As Integer = 0
@@ -70,48 +41,99 @@ ReCheck:
 
         If FileIO.FileSystem.FileExists(Npath) Then
             FileIO.FileSystem.DeleteFile(DumpPath)
-            Try
-                FileIO.FileSystem.DeleteFile(Strings.Left(Npath, Npath.LastIndexOf("\")) & "\Unpacked.exe")
-            Catch ex As Exception
-
-            End Try
-            FileIO.FileSystem.CopyFile(Npath, Strings.Left(Npath, Npath.LastIndexOf("\")) & "\Unpacked.exe")
-            FileIO.FileSystem.DeleteFile(Npath)
-            SavedTo = Strings.Left(Npath, Npath.LastIndexOf("\")) & "\Unpacked.exe"
-            Return True
-            '    MsgBox("Unpacked!" & vbCrLf & "Saved to: " & Strings.Left(Npath, Npath.LastIndexOf("\")) & "\Unpacked.exe")
+            CleanupFiles(Npath)
         Else
-            If ReCheckCount = 2 Then
+
+            If ReCheckCount >= 2 Then
                 Return False
             End If
-            Try
-                iatStart = 0
-                iatSize = 0
-                errorPtr = Marshal.AllocHGlobal(1000)
-                Dim result As Integer = SearchAndRebuildImportsNoNewSection(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
-                Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
-                Marshal.FreeHGlobal(errorPtr)
-                ReCheckCount += 1
-                GoTo ReCheck
-            Catch exx As Exception
-                Try
-                    iatSize = 0
-                    iatStart = 0
-                    errorPtr = Marshal.AllocHGlobal(1000)
-                    Dim result As Integer = SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
-                    Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
-                    Marshal.FreeHGlobal(errorPtr)
+
+            If ReCheckCount = 0 Then
+                If SearchAndRebuildImportsNoNewSection(ProcID, DumpPath, IROEP) = True Then
                     ReCheckCount += 1
                     GoTo ReCheck
-                Catch exxx As Exception
+                Else
+                    ReCheckCount += 1
+                    If SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP) = True Then
+                        ReCheckCount += 1
+                        GoTo ReCheck
+                    Else
+                        Return False
+                    End If
+                End If
+            Else
+                If SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP) = True Then
+                    ReCheckCount += 1
+                    GoTo ReCheck
+                Else
                     Return False
-                End Try
-            End Try
+                End If
+            End If
+
             Return False
             'MsgBox("Auto import reconstruction failed!, Manually rebuilt now!")
         End If
-
         Return True
     End Function
+    Private Function SearchAndRebuildImports(ByRef ProcID, ByRef DumpPath, ByRef IROEP)
+        Dim iatStart As UInt32 = 0
+        Dim iatSize As UInt32 = 0
+        Dim errorPtr As IntPtr = GetErrorPtr()
 
+        Try
+            Dim result As Integer = SearchAndRebuildImports(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
+            Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
+            Marshal.FreeHGlobal(errorPtr)
+            Return True
+        Catch ex As Exception
+            Return False
+        End Try
+    End Function
+    Private Function SearchAndRebuildImportsNoNewSection(ByRef ProcID, ByRef DumpPath, ByRef IROEP)
+        Dim errorPtr As IntPtr
+        Dim iatSize As UInteger
+        Dim iatStart As UInteger
+        Try
+            iatStart = 0
+            iatSize = 0
+            errorPtr = GetErrorPtr()
+            Dim result As Integer = SearchAndRebuildImportsNoNewSection(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
+            Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
+            Marshal.FreeHGlobal(errorPtr)
+            Return True
+        Catch exx As Exception
+            Return False
+        End Try
+    End Function
+    Private Function GetErrorPtr()
+        Return Marshal.AllocHGlobal(1000)
+    End Function
+    Private Function SearchAndRebuildImportsIATOptimized(ByRef ProcID, ByRef DumpPath, ByRef IROEP)
+        Dim errorPtr As IntPtr
+        Dim iatSize As UInteger
+        Dim iatStart As UInteger
+        Try
+            iatSize = 0
+            iatStart = 0
+            errorPtr = GetErrorPtr()
+            Dim result As Integer = SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP, 0, iatStart, iatSize, errorPtr)
+            Dim errorMessage As String = Marshal.PtrToStringAnsi(errorPtr)
+            Marshal.FreeHGlobal(errorPtr)
+            ' ReCheckCount += 1
+            'GoTo ReCheck
+        Catch exxx As Exception
+            Return False
+        End Try
+        Return True
+    End Function
+    Private Sub CleanupFiles(ByVal NewPath As String)
+        Try
+            FileIO.FileSystem.DeleteFile(Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe")
+        Catch ex As Exception
+        End Try
+
+        FileIO.FileSystem.CopyFile(NewPath, Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe")
+        FileIO.FileSystem.DeleteFile(NewPath)
+        SavedTo = Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe"
+    End Sub
 End Class
