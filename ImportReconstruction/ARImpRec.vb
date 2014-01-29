@@ -17,7 +17,7 @@ IRWarning As IntPtr) As UInteger
     End Function
 
     Private Shared SavedTo As String
-    Sub FixFileAllignment(ByRef TheFile As String)
+    Private Sub FixFileAllignment(ByRef TheFile As String)
         Dim FileArray() As Byte = FileIO.FileSystem.ReadAllBytes(TheFile)
         Dim AddrToEP As Long = FileArray(59) & FileArray(60)
         Dim AddrToAllignment As Long = AddrToEP + 59
@@ -55,7 +55,7 @@ IRWarning As IntPtr) As UInteger
             Loop
             FileIO.FileSystem.WriteAllBytes(TheFile, FileArray, False)
         End If
-  End Sub
+    End Sub
     Sub Initilize(ByVal MyPath As String)
         If FileIO.FileSystem.FileExists(MyPath & "ARImpRec.dll") Then
         Else
@@ -65,7 +65,7 @@ IRWarning As IntPtr) As UInteger
     Function GetSavePath()
         Return SavedTo
     End Function
-    Function FixImports(ByVal ProcID, ByVal DumpPath, ByVal IROEP)
+    Function FixImports(ByVal ProcID As UInteger, ByVal DumpPath As String, ByVal IROEP As UInteger, Optional FixFileAlignment As Boolean = True)
         If SearchAndRebuildImports(ProcID, DumpPath, IROEP) = False Then
             If SearchAndRebuildImportsNoNewSection(ProcID, DumpPath, IROEP) = False Then
                 If SearchAndRebuildImportsIATOptimized(ProcID, DumpPath, IROEP) = False Then
@@ -80,7 +80,7 @@ ReCheck:
 
         If FileIO.FileSystem.FileExists(Npath) Then
             FileIO.FileSystem.DeleteFile(DumpPath)
-            CleanupFiles(Npath)
+            CleanupFiles(Npath, FixFileAlignment)
         Else
 
             If ReCheckCount >= 2 Then
@@ -165,7 +165,7 @@ ReCheck:
         End Try
         Return True
     End Function
-    Private Sub CleanupFiles(ByVal NewPath As String)
+    Private Sub CleanupFiles(ByVal NewPath As String, ByRef FixAlignment As Boolean)
         Try
             FileIO.FileSystem.DeleteFile(Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe")
         Catch ex As Exception
@@ -174,6 +174,6 @@ ReCheck:
         FileIO.FileSystem.CopyFile(NewPath, Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe")
         FileIO.FileSystem.DeleteFile(NewPath)
         SavedTo = Strings.Left(NewPath, NewPath.LastIndexOf("\")) & "\Unpacked.exe"
-        FixFileAllignment(SavedTo)
+        If FixAlignment = True Then FixFileAllignment(SavedTo)
     End Sub
 End Class

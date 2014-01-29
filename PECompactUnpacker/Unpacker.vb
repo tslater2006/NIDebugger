@@ -45,10 +45,10 @@ Public Class Unpacker
         Clipboard.SetText(Hex(newEP))
 
         Dim ImportFixer As New ImportReconstruction.ARImpRec
-        ImportFixer.FixFileAllignment(dumpOpts.OutputPath)
+
         ImportFixer.Initilize(Application.StartupPath & "\")
 
-        If ImportFixer.FixImports(debugger.Process.Id, dumpOpts.OutputPath, newEP + debugger.ProcessImageBase) = True Then
+        If ImportFixer.FixImports(debugger.Process.Id, dumpOpts.OutputPath, newEP + debugger.ProcessImageBase, True) = True Then
             MsgBox("Successfully unpacked! Saved to: " & Environment.NewLine & ImportFixer.GetSavePath)
         Else
             MsgBox("Import Reconstruction failed, Manually rebuild now!")
