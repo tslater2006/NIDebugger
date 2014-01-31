@@ -25,7 +25,6 @@ namespace NonIntrusive
             ctx.EFlags -= GetFlag(ctx,i) ? (uint)i : 0;
 
             ctx.EFlags ^= (value) ? (uint)i : 0;
-
         }
 
         /// <summary>
@@ -159,7 +158,6 @@ namespace NonIntrusive
 
         Dictionary<int, IntPtr> threadHandles = new Dictionary<int, IntPtr>();
         public Win32.CONTEXT Context;
-        private static ManualResetEvent mre = new ManualResetEvent(false);
         BackgroundWorker bwContinue;
         Win32.PROCESS_INFORMATION debuggedProcessInfo;
         // dont need a RET on INSTALL since we wont be calling it, just need 2 bytes to set a BP on
@@ -187,8 +185,6 @@ namespace NonIntrusive
         // where in the INSTALL method we need to change the 4 bytes to point to API
         uint HWBP_VEH_INSTALL_API_OFFSET = 0x6B;
 
-
-        // fuck so many of these
         public NIBreakDetails LastBreak = null;
 
         Process debuggedProcess;
@@ -759,14 +755,27 @@ namespace NonIntrusive
         }
 
 
+
         /// <summary>
         /// Signals that the debugged process should be resumed, and that the debugger should continue to monitor for BreakPoint hits.
         /// </summary>
         /// <returns></returns>
         public NIDebugger Continue()
         {
-            // dafuq am i getting the context for here?! weird
             updateContext(getCurrentThreadId());
+            getContext(getCurrentThreadId());
+            runInBursts();
+            
+            if (AutoClearBP)
+            {
+                ClearBreakpoint(LastBreak.BreakPoint.bpAddress);
+            }
+            return this;
+        }
+
+        private NIDebugger Continue(int threadId)
+        {
+            updateContext(threadId);
             if (LastBreak != null)
             {
                 if (LastBreak.Event == NIBreakEvent.SINGLE_STEP || LastBreak.Event == NIBreakEvent.HWBP)
@@ -782,15 +791,9 @@ namespace NonIntrusive
 
                 }
             }
-            
-            bwContinue = new BackgroundWorker();
-            
-            bwContinue.DoWork += bw_Continue;
 
-            mre.Reset();
-            bwContinue.RunWorkerAsync();
-            mre.WaitOne();
-            
+            runInBursts(threadId);
+
             if (AutoClearBP)
             {
                 ClearBreakpoint(LastBreak.BreakPoint.bpAddress);
@@ -820,29 +823,29 @@ namespace NonIntrusive
             {
                 ClearBreakpoint(addr);
             }
+            Context.Dr7 = 0;
             updateContext(getCurrentThreadId());
-            if (LastBreak != null)
-            {
-                if (LastBreak.Event == NIBreakEvent.SINGLE_STEP || LastBreak.Event == NIBreakEvent.HWBP)
-                {
-                    int contextSize = Marshal.SizeOf(LastBreak.Context);
-                    IntPtr memoryPtr = Marshal.AllocHGlobal(contextSize);
-                    Marshal.StructureToPtr(LastBreak.Context, memoryPtr, true);
-                    byte[] contextData = new byte[contextSize];
-                    Marshal.Copy(memoryPtr, contextData, 0, contextSize);
-                    Marshal.FreeHGlobal(memoryPtr);
-
-                    WriteData(LastBreak.ContextAddress, contextData);
-
-                }
-            }
+            getContext(getCurrentThreadId());
             resumeAllThreads();
             return this;
         }
 
         public NIDebugger SetHardBreakPoint(uint address, HWBP_MODE mode, HWBP_TYPE type, HWBP_SIZE size)
         {
-            return SetHardBreakPoint(new NIHardBreakPoint(address, mode, type, size));
+            return SetHardBreakPoint(new NIHardBreakPoint(address, mode, type, size) { enabled = true });
+        }
+
+        public NIDebugger RemoveHardBreakPoint(uint address)
+        {
+            foreach (NIHardBreakPoint hwbp in hwbps)
+            {
+                if (hwbp.bpAddress == address)
+                {
+                    hwbps.Remove(hwbp);
+                }
+            }
+
+            return this;
         }
 
         public NIDebugger SetHardBreakPoint(NIHardBreakPoint hwbp)
@@ -1314,7 +1317,7 @@ namespace NonIntrusive
             
             if (hwbps.Count > 0)
             {
-                NIHardBreakPoint[] hwbpTempArray = hwbps.ToArray<NIHardBreakPoint>();
+                NIHardBreakPoint[] hwbpTempArray = hwbps.Where(p => p.enabled == true).ToArray<NIHardBreakPoint>();
                 NIHardBreakPoint[] hwbpArray = new NIHardBreakPoint[4] { null, null, null, null };
 
                 Array.Copy(hwbpTempArray, hwbpArray, hwbpTempArray.Length);
@@ -1428,10 +1431,13 @@ namespace NonIntrusive
             return handle;
         }
 
-        
-        private void bw_Continue(object sender, DoWorkEventArgs e)
+        public void runInBursts()
         {
-            BackgroundWorker worker = sender as BackgroundWorker;
+            runInBursts(-1);
+        }
+        private void runInBursts(int threadId)
+        {
+
             while (1==1)
             {
                 if (debuggedProcess.HasExited)
@@ -1442,43 +1448,48 @@ namespace NonIntrusive
                 //Console.WriteLine("threads paused");
                 foreach (ProcessThread pThread in debuggedProcess.Threads)
                 {
+                    if (threadId != -1 && pThread.Id != threadId)
+                    {
+                        continue;
+                    }
                     if (getContext(pThread.Id).Eip == HWBP_VEH_BP_ADDR)
                     {
                         Console.WriteLine("It seems we've hit a HWBP :P");
 
                         Console.WriteLine("\t If I had to guess, the BP address was: " + Context.Eax.ToString("X8"));
 
-                        uint vehContext = Context.Ecx;
-                        int contextSize = Marshal.SizeOf(Context);
+                        // get the BP Address
+                        uint bpAddress = Context.Eax;
 
-                        byte[] contextData = new byte[contextSize];
+                        // disable all HWBP's for this thread
+                        WriteDWORD(Context.Ecx + 0x18, 0);
 
-                        ReadData(vehContext, contextData.Length, out contextData);
-
-                        IntPtr contextPtr = Marshal.AllocHGlobal(contextSize);
-                        Marshal.Copy(contextData, 0, contextPtr, contextSize);
-                        Win32.CONTEXT debugContext = (Win32.CONTEXT)Marshal.PtrToStructure(contextPtr, typeof(Win32.CONTEXT));
-                        Marshal.FreeHGlobal(contextPtr);
-
-                        LastBreak = new NIBreakDetails();
-                        LastBreak.BreakAddress = Context.Eax;
-                        int bpHit = (int)debugContext.Dr6 & 0x0f;
-                        int x = 0;
-                        while (bpHit != 1)
+                        NIHardBreakPoint bp = null;
+                        // find the HWBP 
+                        foreach (NIHardBreakPoint hwbp in hwbps)
                         {
-                            x++;
-                            bpHit >>= 1;
+                            if (hwbp.bpAddress == bpAddress)
+                            {
+                                bp = hwbp;
+                                break;
+                            }
                         }
+                        // disable this HWBP
+                        bp.enabled = false;
 
-                        LastBreak.BreakPoint = hwbps[x];
-                        LastBreak.Event = NIBreakEvent.HWBP;
-                        LastBreak.ThreadId = pThread.Id;
-                        LastBreak.Context = debugContext;
-                        LastBreak.ContextAddress = vehContext;
-                        getContext(pThread.Id);
+                        // set a soft BP at exception address
+                        SetBreakpoint(bpAddress);
                         Context.Eip += 2;
-                        e.Cancel = true;
-                        mre.Set();
+                        // wait for soft to hit
+                        Continue(pThread.Id);
+
+                        // clear soft BP
+                        ClearBreakpoint(bpAddress);
+                        
+                        
+                        getContext(pThread.Id);
+
+                        Context.SetFlag(NIContextFlag.RESUME, true);
                         return;
                     }
                     foreach (uint address in breakpoints.Keys)
@@ -1495,8 +1506,6 @@ namespace NonIntrusive
                             LastBreak.ThreadId = pThread.Id;
                             getContext(pThread.Id);
 
-                            e.Cancel = true;
-                            mre.Set();
                             return;
                         }
                     }
@@ -1666,7 +1675,7 @@ namespace NonIntrusive
     /// </summary>
     public enum NIContextFlag : uint
     {
-        CARRY = 0x01, PARITY = 0x04, ADJUST = 0x10, ZERO = 0x40, SIGN = 0x80, DIRECTION = 0x400, OVERFLOW = 0x800
+        CARRY = 0x01, PARITY = 0x04, ADJUST = 0x10, ZERO = 0x40, SIGN = 0x80, DIRECTION = 0x400, OVERFLOW = 0x800,RESUME =0x10000
     }
 
     
@@ -1739,6 +1748,7 @@ namespace NonIntrusive
         public HWBP_MODE mode;
         public HWBP_SIZE size;
         public HWBP_TYPE type;
+        public bool enabled;
         public NIHardBreakPoint(uint address, HWBP_MODE mode, HWBP_TYPE type, HWBP_SIZE size)
         {
             this.mode = mode;

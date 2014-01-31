@@ -17,7 +17,6 @@ namespace NIDebugger_Test
 
             NIStartupOptions opts = new NIStartupOptions();
             opts.executable = @"c:\windows\system32\notepad.exe";
-            //opts.executable = @"C:\Users\Timothy\Documents\Visual Studio 2013\Projects\HelloCPP\Release\HelloCPP.exe";
             opts.resumeOnCreate = false;
             debug.Execute(opts);
 
@@ -25,9 +24,8 @@ namespace NIDebugger_Test
             debug.InstallHardVEH();
 
             Console.WriteLine("Setting HWBP on Execute");
-            debug.SetHardBreakPoint(0xff62a2, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_EXECUTE, HWBP_SIZE.SIZE_1);
-            //debug.SetHardBreakPoint(0x700a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
-            //debug.SetHardBreakPoint(0x100a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
+            debug.SetHardBreakPoint(0xc562a8, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_EXECUTE, HWBP_SIZE.SIZE_1);
+            
 
             Console.WriteLine("Generating Hello World String in Target");
             uint memoryCave;
@@ -36,19 +34,28 @@ namespace NIDebugger_Test
             debug.WriteString(memoryCave, "Welcome to NIDebugger HWBPs", Encoding.Unicode);
 
             Console.WriteLine("Running...");
-            // hope and pray
-            debug.Continue();
-            Console.WriteLine("Setting EAX to new String address");
-            debug.LastBreak.Context.Eax = memoryCave;
+            
 
-            Console.WriteLine("Detaching...");
+            debug.Continue();
+
+            // hope and pray
+            Console.WriteLine("Our EIP after HWBP is: " + debug.Context.Eip.ToString("X8"));
+
+            Console.WriteLine("Setting EAX to new String address");
+            String oldString;
+            debug.ReadString(debug.Context.Eax, 100, Encoding.Unicode, out oldString);
+
+            debug.Context.Eax = memoryCave;
+
+
             debug.Detach();
+            //debug.Detach();
 
 
             //ChangeAllSetText();
 
             Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
+           // Console.ReadKey();
         }
 
 
