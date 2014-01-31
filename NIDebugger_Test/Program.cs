@@ -25,9 +25,9 @@ namespace NIDebugger_Test
             debug.InstallHardVEH();
 
             Console.WriteLine("Setting HWBP on Execute");
-            //debug.SetHardBreakPoint(0xff62a2, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_EXECUTE, HWBP_SIZE.SIZE_1);
-            debug.SetHardBreakPoint(0x700a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
-            debug.SetHardBreakPoint(0x100a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
+            debug.SetHardBreakPoint(0xff62a2, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_EXECUTE, HWBP_SIZE.SIZE_1);
+            //debug.SetHardBreakPoint(0x700a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
+            //debug.SetHardBreakPoint(0x100a204, HWBP_MODE.MODE_LOCAL, HWBP_TYPE.TYPE_READWRITE, HWBP_SIZE.SIZE_1);
 
             Console.WriteLine("Generating Hello World String in Target");
             uint memoryCave;
