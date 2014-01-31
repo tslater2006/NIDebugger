@@ -19,30 +19,22 @@
             .SetBreakpoint(.Context.Eip)
             .ClearBreakpoint(.Context.Eip)
 
-            With SearchOpts
-                .SearchString = "EB 09 FE ?? 0F 84 ?? 82 FC FF"
-                .SearchImage = True
-                .MaxOccurs = 1
-            End With
-
             Dim Result() As UInteger = {}
 
-            .SearchMemory(SearchOpts, Result)
-
-            If Result.Length > 0 Then
-            Else
                 With SearchOpts
                     .SearchString = "78 F3 75 03 FF 63 0C"
                     .SearchImage = True
                     .MaxOccurs = 1
                 End With
-                .SearchMemory(SearchOpts, Result)
-                If Result.Length > 0 Then
-                Else
-                    MsgBox("Are you sure its protected with FSG?")
-                    End
-                End If
+
+            .SearchMemory(SearchOpts, Result)
+
+            If Result.Length > 0 Then
+            Else
+                MsgBox("Are you sure its protected with FSG?")
+                End
             End If
+
 
             .SetBreakpoint((Result(0) + &H4))
 
