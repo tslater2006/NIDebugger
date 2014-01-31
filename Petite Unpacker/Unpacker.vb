@@ -26,7 +26,8 @@ Public Class Unpacker
         End With
 
         With debugger
-            .Execute(SO) _
+            .Execute(SO)
+            .InstallHardVEH()
             .SingleStep(5)
             Dim BPAddr As Long = .Context.Esp
             Dim myVal As UInteger = 0 '= 4
@@ -36,19 +37,21 @@ Public Class Unpacker
             Array.Reverse(bytess)
             myVal = BitConverter.ToUInt32(bytess, 0)
 
-            '    MsgBox(Hex(myVal))
-            MsgBox(Hex(.Context.Eip))
+            'MsgBox(Hex(myVal))
+            'MsgBox(Hex(.Context.Eip))
+            '.InstallHardVEH()
             .SetHardBreakPoint(.Context.Eip, NonIntrusive.HWBP_MODE.MODE_LOCAL, NonIntrusive.HWBP_TYPE.TYPE_READWRITE, NonIntrusive.HWBP_SIZE.SIZE_4)
             .Continue()
-            MsgBox(.LastBreak.Context.Eip.ToString("X8"))
-
+            '  MsgBox(.LastBreak.Context.Eip.ToString("X8"))
             'add the hardware bp == myVal
             'single step 2 times
             'we are at oep
             'dump process & rebuild Imports :D
 
             Dim NewEP As UInteger
-            NewEP = debugger.Context.Eip - debugger.Process.MainModule.BaseAddress
+            'NewEP = debugger.Context.Eip - debugger.Process.MainModule.BaseAddress
+            NewEP = debugger.LastBreak.BreakAddress - debugger.Process.MainModule.BaseAddress
+            .SetBreakpoint(debugger.LastBreak.BreakAddress + debugger.GetInstrLength())
 
             DumpOpts.EntryPoint = NewEP
             debugger.DumpProcess(DumpOpts)
